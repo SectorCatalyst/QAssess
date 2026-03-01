@@ -2,6 +2,7 @@ export interface EnvConfig {
   nodeEnv: string;
   port: number;
   databaseUrl: string;
+  corsAllowedOrigins: string[] | '*';
   jwtAccessSecret: string;
   jwtRefreshSecret: string;
   webhookSecretEncryptionKey: string;
@@ -68,6 +69,25 @@ function validateSecretStrength(name: string, value: string): void {
   }
 }
 
+function parseCorsAllowedOrigins(nodeEnv: string): string[] | '*' {
+  const raw = process.env.CORS_ALLOWED_ORIGINS;
+  if (!raw || raw.trim().length === 0) {
+    return nodeEnv === 'development' ? '*' : '*';
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed === '*') {
+    return '*';
+  }
+
+  const origins = trimmed
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  return origins.length > 0 ? origins : '*';
+}
+
 export function loadEnv(): EnvConfig {
   const port = parseNumber('PORT', 4000, 1, 65535);
   const nodeEnv = process.env.NODE_ENV ?? 'development';
@@ -90,6 +110,7 @@ export function loadEnv(): EnvConfig {
     nodeEnv,
     port,
     databaseUrl,
+    corsAllowedOrigins: parseCorsAllowedOrigins(nodeEnv),
     jwtAccessSecret,
     jwtRefreshSecret,
     webhookSecretEncryptionKey,

@@ -16,6 +16,7 @@ const TEST_ENV: EnvConfig = {
   nodeEnv: 'test',
   port: 0,
   databaseUrl: 'postgres://unused-for-tests',
+  corsAllowedOrigins: '*',
   jwtAccessSecret: 'integration-test-access-secret',
   jwtRefreshSecret: 'integration-test-refresh-secret',
   webhookSecretEncryptionKey: 'integration-test-webhook-secret-key',

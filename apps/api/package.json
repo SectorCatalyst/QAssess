@@ -6,9 +6,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "start:worker:pdf": "node dist/jobs/pdf-worker.js",
+    "start:worker:webhook": "node dist/jobs/webhook-worker.js",
+    "start:worker:webhook:replay": "node dist/jobs/webhook-replay-worker.js",
     "dev": "node --watch --loader ts-node/esm src/index.ts",
     "check": "tsc --noEmit -p tsconfig.json",
     "db:migrate": "node --loader ts-node/esm scripts/migrate.ts",
+    "db:migrate:runtime": "node dist/jobs/migrate.js",
     "db:migrate:dry-run": "node --loader ts-node/esm scripts/migrate-dry-run.ts",
     "ops:rehearsal:local": "bash scripts/local-production-rehearsal.sh",
     "ops:staging:execute": "bash scripts/staging-execution.sh",
@@ -27,6 +31,7 @@
   },
   "dependencies": {
     "@apidevtools/json-schema-ref-parser": "^11.7.3",
+    "@fastify/cors": "^11.2.0",
     "bcryptjs": "^2.4.3",
     "fastify": "^5.1.0",
     "jsonwebtoken": "^9.0.2",

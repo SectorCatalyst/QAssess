@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
 
 import { loadEnv, type EnvConfig } from './config/env.js';
 import { createDatabaseClient, type DatabaseClient } from './lib/db.js';
@@ -75,6 +76,24 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   const app = Fastify({
     logger: false,
     trustProxy: true
+  });
+
+  await app.register(cors, {
+    credentials: true,
+    origin: (origin, callback) => {
+      if (env.corsAllowedOrigins === '*') {
+        callback(null, true);
+        return;
+      }
+
+      // Non-browser/server-to-server requests often omit Origin and should be allowed.
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      callback(null, env.corsAllowedOrigins.includes(origin));
+    }
   });
 
   app.setErrorHandler((error, request, reply) => {
