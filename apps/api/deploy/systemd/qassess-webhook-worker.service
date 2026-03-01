@@ -1,0 +1,12 @@
+[Unit]
+Description=QAssess Webhook Worker (single run)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=qassess
+Group=qassess
+WorkingDirectory=/opt/qassess/apps/api
+EnvironmentFile=/etc/qassess/api.env
+ExecStart=/usr/bin/npm run worker:webhook

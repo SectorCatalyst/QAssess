@@ -1,0 +1,45 @@
+{
+  "name": "@qassess/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "node --watch --loader ts-node/esm src/index.ts",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "db:migrate": "node --loader ts-node/esm scripts/migrate.ts",
+    "db:migrate:dry-run": "node --loader ts-node/esm scripts/migrate-dry-run.ts",
+    "ops:rehearsal:local": "bash scripts/local-production-rehearsal.sh",
+    "ops:staging:execute": "bash scripts/staging-execution.sh",
+    "ops:backup:restore-drill": "bash scripts/backup-restore-drill.sh",
+    "ops:metrics:snapshot": "node --loader ts-node/esm scripts/ops-metrics-snapshot.ts",
+    "ops:schema:parity": "node --loader ts-node/esm scripts/schema-parity.ts",
+    "ops:webhook-secrets:backfill": "node --loader ts-node/esm scripts/backfill-webhook-secrets.ts",
+    "smoke:staging": "node --loader ts-node/esm scripts/staging-smoke.ts",
+    "load:baseline": "node --loader ts-node/esm scripts/load-baseline.ts",
+    "worker:pdf": "node --loader ts-node/esm src/jobs/pdf-worker.ts",
+    "worker:webhook": "node --loader ts-node/esm src/jobs/webhook-worker.ts",
+    "worker:webhook:replay": "node --loader ts-node/esm src/jobs/webhook-replay-worker.ts",
+    "test:integration": "node --test --loader ts-node/esm tests/integration/**/*.test.ts",
+    "test:e2e": "node --test --loader ts-node/esm tests/e2e/**/*.test.ts",
+    "test": "npm run test:integration && npm run test:e2e"
+  },
+  "dependencies": {
+    "@apidevtools/json-schema-ref-parser": "^11.7.3",
+    "bcryptjs": "^2.4.3",
+    "fastify": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "pg-mem": "^3.0.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}

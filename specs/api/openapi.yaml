@@ -1,0 +1,2189 @@
+openapi: 3.1.0
+info:
+  title: QAssess API
+  version: 0.3.0
+  description: |
+    Multi-tenant assessment platform API supporting authoring, public runtime, scoring,
+    reporting, analytics, and integrations.
+servers:
+  - url: https://api.qassess.example.com/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Assessments
+  - name: Landing Builder
+  - name: Questions
+  - name: Scoring
+  - name: Reports
+  - name: Public Runtime
+  - name: Sessions
+  - name: PDF
+  - name: Analytics
+  - name: Integrations
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Admin login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/me:
+    get:
+      tags: [Auth]
+      summary: Current authenticated user
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /assessments:
+    get:
+      tags: [Assessments]
+      summary: List assessments
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/AssessmentStatus'
+      responses:
+        '200':
+          description: Assessment list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAssessments'
+    post:
+      tags: [Assessments]
+      summary: Create assessment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssessmentCreateRequest'
+      responses:
+        '201':
+          description: Assessment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assessment'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /assessments/{assessmentId}:
+    get:
+      tags: [Assessments]
+      summary: Get assessment
+      parameters:
+        - $ref: '#/components/parameters/AssessmentId'
+      responses:
+        '200':
+          description: Assessment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assessment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Assessments]
+      summary: Update assessment
+      parameters:
+        - $ref: '#/components/parameters/AssessmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssessmentUpdateRequest'
+      responses:
+        '200':
+          description: Updated assessment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assessment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /assessments/{assessmentId}/versions:
+    get:
+      tags: [Assessments]
+      summary: List versions for an assessment
+      parameters:
+        - $ref: '#/components/parameters/AssessmentId'
+      responses:
+        '200':
+          description: Version list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssessmentVersion'
+    post:
+      tags: [Assessments]
+      summary: Create draft version
+      parameters:
+        - $ref: '#/components/parameters/AssessmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssessmentVersionCreateRequest'
+      responses:
+        '201':
+          description: Version created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentVersion'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /versions/{versionId}:
+    get:
+      tags: [Assessments]
+      summary: Get assessment version
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200':
+          description: Version details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentVersion'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Assessments]
+      summary: Update draft version metadata
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssessmentVersionUpdateRequest'
+      responses:
+        '200':
+          description: Updated version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentVersion'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /versions/{versionId}/publish:
+    post:
+      tags: [Assessments]
+      summary: Publish a draft version
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                unpublishPrevious:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Version published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentVersion'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /versions/{versionId}/landing:
+    get:
+      tags: [Landing Builder]
+      summary: Get landing page configuration
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200':
+          description: Landing page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandingPage'
+    put:
+      tags: [Landing Builder]
+      summary: Replace landing page metadata
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LandingPageUpsertRequest'
+      responses:
+        '200':
+          description: Landing page updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandingPage'
+
+  /versions/{versionId}/landing/blocks:
+    get:
+      tags: [Landing Builder]
+      summary: List landing page blocks
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200':
+          description: Block list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PageBlock'
+    post:
+      tags: [Landing Builder]
+      summary: Add landing block
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PageBlockCreateRequest'
+      responses:
+        '201':
+          description: Block created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageBlock'
+
+  /landing/blocks/{blockId}:
+    patch:
+      tags: [Landing Builder]
+      summary: Update a landing block
+      parameters:
+        - $ref: '#/components/parameters/BlockId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PageBlockUpdateRequest'
+      responses:
+        '200':
+          description: Block updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageBlock'
+    delete:
+      tags: [Landing Builder]
+      summary: Delete landing block
+      parameters:
+        - $ref: '#/components/parameters/BlockId'
+      responses:
+        '204':
+          description: Block deleted
+
+  /versions/{versionId}/questions:
+    get:
+      tags: [Questions]
+      summary: List questions
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200':
+          description: Questions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Question'
+    post:
+      tags: [Questions]
+      summary: Create question
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionCreateRequest'
+      responses:
+        '201':
+          description: Question created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Question'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /questions/{questionId}:
+    patch:
+      tags: [Questions]
+      summary: Update question
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionUpdateRequest'
+      responses:
+        '200':
+          description: Question updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Question'
+    delete:
+      tags: [Questions]
+      summary: Delete question
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+      responses:
+        '204':
+          description: Question deleted
+
+  /questions/{questionId}/options:
+    get:
+      tags: [Questions]
+      summary: List answer options
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+      responses:
+        '200':
+          description: Options
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AnswerOption'
+    post:
+      tags: [Questions]
+      summary: Create answer option
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerOptionCreateRequest'
+      responses:
+        '201':
+          description: Option created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerOption'
+
+  /answer-options/{optionId}:
+    patch:
+      tags: [Questions]
+      summary: Update answer option
+      parameters:
+        - $ref: '#/components/parameters/OptionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerOptionUpdateRequest'
+      responses:
+        '200':
+          description: Option updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerOption'
+    delete:
+      tags: [Questions]
+      summary: Delete answer option
+      parameters:
+        - $ref: '#/components/parameters/OptionId'
+      responses:
+        '204':
+          description: Option deleted
+
+  /versions/{versionId}/logic-rules:
+    get:
+      tags: [Questions]
+      summary: List branching/display logic rules
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200':
+          description: Logic rules
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LogicRule'
+    post:
+      tags: [Questions]
+      summary: Create logic rule
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogicRuleCreateRequest'
+      responses:
+        '201':
+          description: Rule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogicRule'
+
+  /logic-rules/{ruleId}:
+    patch:
+      tags: [Questions]
+      summary: Update logic rule
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogicRuleUpdateRequest'
+      responses:
+        '200':
+          description: Rule updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogicRule'
+    delete:
+      tags: [Questions]
+      summary: Delete logic rule
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      responses:
+        '204':
+          description: Rule deleted
+
+  /versions/{versionId}/score-bands:
+    get:
+      tags: [Scoring]
+      summary: List score bands
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200':
+          description: Score bands
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScoreBand'
+    post:
+      tags: [Scoring]
+      summary: Create score band
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreBandCreateRequest'
+      responses:
+        '201':
+          description: Score band created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScoreBand'
+
+  /score-bands/{bandId}:
+    patch:
+      tags: [Scoring]
+      summary: Update score band
+      parameters:
+        - $ref: '#/components/parameters/BandId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreBandUpdateRequest'
+      responses:
+        '200':
+          description: Score band updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScoreBand'
+    delete:
+      tags: [Scoring]
+      summary: Delete score band
+      parameters:
+        - $ref: '#/components/parameters/BandId'
+      responses:
+        '204':
+          description: Score band deleted
+
+  /versions/{versionId}/report-template:
+    get:
+      tags: [Reports]
+      summary: Get report template
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200':
+          description: Report template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportTemplate'
+    put:
+      tags: [Reports]
+      summary: Upsert report template
+      parameters:
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportTemplateUpsertRequest'
+      responses:
+        '200':
+          description: Report template upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportTemplate'
+
+  /report-templates/{templateId}/sections:
+    post:
+      tags: [Reports]
+      summary: Create report section
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportSectionCreateRequest'
+      responses:
+        '201':
+          description: Section created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportSection'
+
+  /report-sections/{sectionId}:
+    patch:
+      tags: [Reports]
+      summary: Update report section
+      parameters:
+        - $ref: '#/components/parameters/SectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportSectionUpdateRequest'
+      responses:
+        '200':
+          description: Section updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportSection'
+    delete:
+      tags: [Reports]
+      summary: Delete report section
+      parameters:
+        - $ref: '#/components/parameters/SectionId'
+      responses:
+        '204':
+          description: Section deleted
+
+  /public/{slug}/bootstrap:
+    get:
+      tags: [Public Runtime]
+      security: []
+      summary: Fetch public assessment runtime payload
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Runtime payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBootstrapResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /public/{slug}/sessions:
+    post:
+      tags: [Public Runtime]
+      security: []
+      summary: Start a public assessment session
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                utm:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+
+  /sessions/{sessionId}/lead:
+    post:
+      tags: [Sessions]
+      security: []
+      summary: Upsert lead details for a session
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeadUpsertRequest'
+      responses:
+        '200':
+          description: Lead attached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /sessions/{sessionId}/responses:
+    put:
+      tags: [Sessions]
+      security: []
+      summary: Upsert response for one question
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResponseUpsertRequest'
+      responses:
+        '200':
+          description: Response saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /sessions/{sessionId}/complete:
+    post:
+      tags: [Sessions]
+      security: []
+      summary: Finalize and score a session
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Scored result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /sessions/{sessionId}/result:
+    get:
+      tags: [Sessions]
+      security: []
+      summary: Get final result payload
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /sessions/{sessionId}/pdf:
+    post:
+      tags: [PDF]
+      security: []
+      summary: Queue report PDF generation
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                emailTo:
+                  type: string
+                  format: email
+      responses:
+        '202':
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PdfJob'
+
+  /pdf-jobs/{jobId}:
+    get:
+      tags: [PDF]
+      security: []
+      summary: Get PDF job status
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PdfJob'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /analytics/assessments/{assessmentId}/summary:
+    get:
+      tags: [Analytics]
+      summary: Assessment funnel and score summary
+      parameters:
+        - $ref: '#/components/parameters/AssessmentId'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: Summary metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsSummary'
+
+  /analytics/assessments/{assessmentId}/dropoff:
+    get:
+      tags: [Analytics]
+      summary: Question-level dropoff metrics
+      parameters:
+        - $ref: '#/components/parameters/AssessmentId'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: Dropoff metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DropoffMetric'
+
+  /integrations/webhooks:
+    get:
+      tags: [Integrations]
+      summary: List webhook endpoints
+      responses:
+        '200':
+          description: Webhook endpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WebhookEndpoint'
+    post:
+      tags: [Integrations]
+      summary: Create webhook endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookEndpointCreateRequest'
+      responses:
+        '201':
+          description: Webhook endpoint created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookEndpoint'
+
+  /integrations/webhooks/{endpointId}:
+    patch:
+      tags: [Integrations]
+      summary: Update webhook endpoint
+      parameters:
+        - $ref: '#/components/parameters/EndpointId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookEndpointUpdateRequest'
+      responses:
+        '200':
+          description: Webhook endpoint updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookEndpoint'
+    delete:
+      tags: [Integrations]
+      summary: Delete webhook endpoint
+      parameters:
+        - $ref: '#/components/parameters/EndpointId'
+      responses:
+        '204':
+          description: Webhook endpoint deleted
+
+  /assessments/{assessmentId}/leads/export:
+    get:
+      tags: [Integrations]
+      summary: Export leads as CSV
+      parameters:
+        - $ref: '#/components/parameters/AssessmentId'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: CSV stream
+          content:
+            text/csv:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Cursor:
+      in: query
+      name: cursor
+      schema:
+        type: string
+    Limit:
+      in: query
+      name: limit
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    AssessmentId:
+      in: path
+      name: assessmentId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    VersionId:
+      in: path
+      name: versionId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BlockId:
+      in: path
+      name: blockId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    QuestionId:
+      in: path
+      name: questionId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OptionId:
+      in: path
+      name: optionId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RuleId:
+      in: path
+      name: ruleId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BandId:
+      in: path
+      name: bandId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TemplateId:
+      in: path
+      name: templateId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SectionId:
+      in: path
+      name: sectionId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SessionId:
+      in: path
+      name: sessionId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    JobId:
+      in: path
+      name: jobId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EndpointId:
+      in: path
+      name: endpointId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DateFrom:
+      in: query
+      name: dateFrom
+      schema:
+        type: string
+        format: date
+    DateTo:
+      in: query
+      name: dateTo
+      schema:
+        type: string
+        format: date
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: State conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorResponse'
+
+  schemas:
+    UserRole:
+      type: string
+      enum: [owner, editor, analyst, viewer]
+
+    AssessmentStatus:
+      type: string
+      enum: [draft, published, archived]
+
+    QuestionType:
+      type: string
+      enum: [single_choice, multi_choice, scale, numeric, short_text]
+
+    SessionStatus:
+      type: string
+      enum: [in_progress, completed, abandoned]
+
+    PdfJobStatus:
+      type: string
+      enum: [queued, processing, completed, failed]
+
+    ErrorResponse:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    ValidationErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            fieldErrors:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        tenantSlug:
+          type: string
+          description: Optional when email exists in multiple tenants.
+
+    AuthTokenResponse:
+      type: object
+      required: [accessToken, refreshToken, expiresIn, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      required: [id, tenantId, email, role, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/UserRole'
+        status:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    Assessment:
+      type: object
+      required: [id, tenantId, name, slug, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/AssessmentStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AssessmentCreateRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        slug:
+          type: string
+          pattern: '^[a-z0-9-]{3,80}$'
+        description:
+          type: string
+
+    AssessmentUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+          pattern: '^[a-z0-9-]{3,80}$'
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/AssessmentStatus'
+
+    AssessmentVersion:
+      type: object
+      required: [id, assessmentId, versionNo, isPublished, title, leadCaptureMode, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        assessmentId:
+          type: string
+          format: uuid
+        versionNo:
+          type: integer
+          minimum: 1
+        isPublished:
+          type: boolean
+        publishedAt:
+          type: string
+          format: date-time
+        title:
+          type: string
+        introCopy:
+          type: string
+        outroCopy:
+          type: string
+        leadCaptureMode:
+          type: string
+          enum: [start, middle, before_results]
+        leadCaptureStep:
+          type: integer
+          minimum: 1
+        runtimeSettings:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AssessmentVersionCreateRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        copyFromVersionId:
+          type: string
+          format: uuid
+
+    AssessmentVersionUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        introCopy:
+          type: string
+        outroCopy:
+          type: string
+        leadCaptureMode:
+          type: string
+          enum: [start, middle, before_results]
+        leadCaptureStep:
+          type: integer
+          minimum: 1
+        runtimeSettings:
+          type: object
+          additionalProperties: true
+
+    LandingPage:
+      type: object
+      required: [id, assessmentVersionId, theme, blocks]
+      properties:
+        id:
+          type: string
+          format: uuid
+        assessmentVersionId:
+          type: string
+          format: uuid
+        seoTitle:
+          type: string
+        seoDescription:
+          type: string
+        theme:
+          type: object
+          additionalProperties: true
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PageBlock'
+
+    LandingPageUpsertRequest:
+      type: object
+      properties:
+        seoTitle:
+          type: string
+        seoDescription:
+          type: string
+        theme:
+          type: object
+          additionalProperties: true
+
+    PageBlock:
+      type: object
+      required: [id, type, position, config, isVisible]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        position:
+          type: integer
+          minimum: 1
+        config:
+          type: object
+          additionalProperties: true
+        isVisible:
+          type: boolean
+
+    PageBlockCreateRequest:
+      type: object
+      required: [type, position, config]
+      properties:
+        type:
+          type: string
+        position:
+          type: integer
+          minimum: 1
+        config:
+          type: object
+          additionalProperties: true
+
+    PageBlockUpdateRequest:
+      type: object
+      properties:
+        type:
+          type: string
+        position:
+          type: integer
+          minimum: 1
+        config:
+          type: object
+          additionalProperties: true
+        isVisible:
+          type: boolean
+
+    Question:
+      type: object
+      required: [id, assessmentVersionId, type, prompt, position, weight, isRequired]
+      properties:
+        id:
+          type: string
+          format: uuid
+        assessmentVersionId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/QuestionType'
+        prompt:
+          type: string
+        helpText:
+          type: string
+        isRequired:
+          type: boolean
+        position:
+          type: integer
+          minimum: 1
+        weight:
+          type: number
+          minimum: 0
+          maximum: 10
+        minValue:
+          type: number
+        maxValue:
+          type: number
+        metadata:
+          type: object
+          additionalProperties: true
+        options:
+          type: array
+          description: Optional public-runtime helper list for choice questions.
+          items:
+            $ref: '#/components/schemas/AnswerOption'
+
+    QuestionCreateRequest:
+      type: object
+      required: [type, prompt, position]
+      properties:
+        type:
+          $ref: '#/components/schemas/QuestionType'
+        prompt:
+          type: string
+          minLength: 1
+        helpText:
+          type: string
+        isRequired:
+          type: boolean
+          default: true
+        position:
+          type: integer
+          minimum: 1
+        weight:
+          type: number
+          minimum: 0
+          maximum: 10
+          default: 1
+        minValue:
+          type: number
+        maxValue:
+          type: number
+        metadata:
+          type: object
+          additionalProperties: true
+
+    QuestionUpdateRequest:
+      type: object
+      properties:
+        prompt:
+          type: string
+        helpText:
+          type: string
+        isRequired:
+          type: boolean
+        position:
+          type: integer
+          minimum: 1
+        weight:
+          type: number
+          minimum: 0
+          maximum: 10
+        minValue:
+          type: number
+        maxValue:
+          type: number
+        metadata:
+          type: object
+          additionalProperties: true
+
+    AnswerOption:
+      type: object
+      required: [id, questionId, label, value, scoreValue, position]
+      properties:
+        id:
+          type: string
+          format: uuid
+        questionId:
+          type: string
+          format: uuid
+        label:
+          type: string
+        value:
+          type: string
+        scoreValue:
+          type: number
+        position:
+          type: integer
+          minimum: 1
+        metadata:
+          type: object
+          additionalProperties: true
+
+    AnswerOptionCreateRequest:
+      type: object
+      required: [label, value, scoreValue, position]
+      properties:
+        label:
+          type: string
+        value:
+          type: string
+        scoreValue:
+          type: number
+        position:
+          type: integer
+          minimum: 1
+        metadata:
+          type: object
+          additionalProperties: true
+
+    AnswerOptionUpdateRequest:
+      type: object
+      properties:
+        label:
+          type: string
+        value:
+          type: string
+        scoreValue:
+          type: number
+        position:
+          type: integer
+          minimum: 1
+        metadata:
+          type: object
+          additionalProperties: true
+
+    LogicRule:
+      type: object
+      required: [id, assessmentVersionId, name, priority, ifExpression, thenAction, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        assessmentVersionId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        priority:
+          type: integer
+          minimum: 1
+        ifExpression:
+          type: object
+          additionalProperties: true
+        thenAction:
+          type: object
+          additionalProperties: true
+        isActive:
+          type: boolean
+
+    LogicRuleCreateRequest:
+      type: object
+      required: [name, ifExpression, thenAction]
+      properties:
+        name:
+          type: string
+        priority:
+          type: integer
+          minimum: 1
+          default: 100
+        ifExpression:
+          type: object
+          additionalProperties: true
+        thenAction:
+          type: object
+          additionalProperties: true
+        isActive:
+          type: boolean
+          default: true
+
+    LogicRuleUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        priority:
+          type: integer
+          minimum: 1
+        ifExpression:
+          type: object
+          additionalProperties: true
+        thenAction:
+          type: object
+          additionalProperties: true
+        isActive:
+          type: boolean
+
+    ScoreBand:
+      type: object
+      required: [id, assessmentVersionId, label, minScore, maxScore, position]
+      properties:
+        id:
+          type: string
+          format: uuid
+        assessmentVersionId:
+          type: string
+          format: uuid
+        label:
+          type: string
+        minScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        maxScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        colorHex:
+          type: string
+        summary:
+          type: string
+        recommendationTemplate:
+          type: string
+        position:
+          type: integer
+          minimum: 1
+
+    ScoreBandCreateRequest:
+      type: object
+      required: [label, minScore, maxScore, position]
+      properties:
+        label:
+          type: string
+        minScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        maxScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        colorHex:
+          type: string
+          pattern: '^#([0-9a-fA-F]{6})$'
+        summary:
+          type: string
+        recommendationTemplate:
+          type: string
+        position:
+          type: integer
+          minimum: 1
+
+    ScoreBandUpdateRequest:
+      type: object
+      properties:
+        label:
+          type: string
+        minScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        maxScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        colorHex:
+          type: string
+          pattern: '^#([0-9a-fA-F]{6})$'
+        summary:
+          type: string
+        recommendationTemplate:
+          type: string
+        position:
+          type: integer
+          minimum: 1
+
+    ReportTemplate:
+      type: object
+      required: [id, assessmentVersionId, title, sections]
+      properties:
+        id:
+          type: string
+          format: uuid
+        assessmentVersionId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        headerContent:
+          type: object
+          additionalProperties: true
+        footerContent:
+          type: object
+          additionalProperties: true
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportSection'
+
+    ReportTemplateUpsertRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        headerContent:
+          type: object
+          additionalProperties: true
+        footerContent:
+          type: object
+          additionalProperties: true
+
+    ReportSection:
+      type: object
+      required: [id, reportTemplateId, sectionKey, title, bodyTemplate, position]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reportTemplateId:
+          type: string
+          format: uuid
+        sectionKey:
+          type: string
+        title:
+          type: string
+        bodyTemplate:
+          type: string
+        displayCondition:
+          type: object
+          additionalProperties: true
+        position:
+          type: integer
+          minimum: 1
+
+    ReportSectionCreateRequest:
+      type: object
+      required: [sectionKey, title, bodyTemplate, position]
+      properties:
+        sectionKey:
+          type: string
+        title:
+          type: string
+        bodyTemplate:
+          type: string
+        displayCondition:
+          type: object
+          additionalProperties: true
+        position:
+          type: integer
+          minimum: 1
+
+    ReportSectionUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        bodyTemplate:
+          type: string
+        displayCondition:
+          type: object
+          additionalProperties: true
+        position:
+          type: integer
+          minimum: 1
+
+    PublicBootstrapResponse:
+      type: object
+      required: [assessmentId, assessmentVersionId, landing, questions]
+      properties:
+        assessmentId:
+          type: string
+          format: uuid
+        assessmentVersionId:
+          type: string
+          format: uuid
+        landing:
+          $ref: '#/components/schemas/LandingPage'
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Question'
+        logicRules:
+          type: array
+          items:
+            $ref: '#/components/schemas/LogicRule'
+        leadCaptureMode:
+          type: string
+          enum: [start, middle, before_results]
+        leadCaptureStep:
+          type: integer
+          minimum: 1
+
+    Session:
+      type: object
+      required: [id, assessmentId, assessmentVersionId, status, startedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        assessmentId:
+          type: string
+          format: uuid
+        assessmentVersionId:
+          type: string
+          format: uuid
+        leadId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/SessionStatus'
+        currentQuestionPosition:
+          type: integer
+          minimum: 1
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    Lead:
+      type: object
+      required: [id, tenantId, assessmentId, consent, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        assessmentId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phone:
+          type: string
+        company:
+          type: string
+        customFields:
+          type: object
+          additionalProperties: true
+        consent:
+          type: boolean
+        consentAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    LeadUpsertRequest:
+      type: object
+      required: [email, consent]
+      properties:
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phone:
+          type: string
+        company:
+          type: string
+        customFields:
+          type: object
+          additionalProperties: true
+        consent:
+          type: boolean
+
+    ResponseUpsertRequest:
+      type: object
+      required: [questionId, answer]
+      properties:
+        questionId:
+          type: string
+          format: uuid
+        answer:
+          anyOf:
+            - type: string
+            - type: number
+            - type: array
+              items:
+                type: string
+            - type: object
+              additionalProperties: true
+
+    Response:
+      type: object
+      required: [id, sessionId, questionId, answer, computedScore, answeredAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        questionId:
+          type: string
+          format: uuid
+        answer:
+          anyOf:
+            - type: string
+            - type: number
+            - type: array
+              items:
+                type: string
+            - type: object
+              additionalProperties: true
+        computedScore:
+          type: number
+        answeredAt:
+          type: string
+          format: date-time
+
+    Result:
+      type: object
+      required: [sessionId, rawScore, normalizedScore, finalizedAt]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        rawScore:
+          type: number
+        normalizedScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        maxPossibleRawScore:
+          type: number
+        scoreBand:
+          $ref: '#/components/schemas/ScoreBand'
+        breakdown:
+          type: object
+          additionalProperties: true
+        recommendations:
+          type: array
+          items:
+            type: string
+        generatedReport:
+          type: object
+          additionalProperties: true
+        finalizedAt:
+          type: string
+          format: date-time
+
+    PdfJob:
+      type: object
+      required: [id, sessionId, status, attemptCount, queuedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/PdfJobStatus'
+        storageKey:
+          type: string
+        fileUrl:
+          type: string
+          format: uri
+        errorMessage:
+          type: string
+        attemptCount:
+          type: integer
+          minimum: 0
+        queuedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    AnalyticsSummary:
+      type: object
+      required: [assessmentId, dateFrom, dateTo, visits, starts, completions, leads, conversionRate]
+      properties:
+        assessmentId:
+          type: string
+          format: uuid
+        dateFrom:
+          type: string
+          format: date
+        dateTo:
+          type: string
+          format: date
+        visits:
+          type: integer
+          minimum: 0
+        starts:
+          type: integer
+          minimum: 0
+        completions:
+          type: integer
+          minimum: 0
+        leads:
+          type: integer
+          minimum: 0
+        conversionRate:
+          type: number
+          minimum: 0
+          maximum: 1
+        averageScore:
+          type: number
+
+    DropoffMetric:
+      type: object
+      required: [questionId, views, exits, dropoffRate]
+      properties:
+        questionId:
+          type: string
+          format: uuid
+        questionPrompt:
+          type: string
+        views:
+          type: integer
+          minimum: 0
+        exits:
+          type: integer
+          minimum: 0
+        dropoffRate:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    WebhookEndpoint:
+      type: object
+      required: [id, tenantId, name, targetUrl, subscribedEvents, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        targetUrl:
+          type: string
+          format: uri
+        subscribedEvents:
+          type: array
+          items:
+            type: string
+            enum: [lead.created, session.completed, pdf.generated]
+        isActive:
+          type: boolean
+
+    WebhookEndpointCreateRequest:
+      type: object
+      required: [name, targetUrl, secret, subscribedEvents]
+      properties:
+        name:
+          type: string
+        targetUrl:
+          type: string
+          format: uri
+        secret:
+          type: string
+          minLength: 12
+        subscribedEvents:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [lead.created, session.completed, pdf.generated]
+
+    WebhookEndpointUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        targetUrl:
+          type: string
+          format: uri
+        secret:
+          type: string
+          minLength: 12
+        subscribedEvents:
+          type: array
+          items:
+            type: string
+            enum: [lead.created, session.completed, pdf.generated]
+        isActive:
+          type: boolean
+
+    Pagination:
+      type: object
+      required: [hasMore]
+      properties:
+        nextCursor:
+          type: string
+        hasMore:
+          type: boolean
+
+    PaginatedAssessments:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Assessment'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
