@@ -28,8 +28,44 @@ interface StudioPageProps {
 
 type Notice = { type: 'success' | 'error' | 'info'; message: string } | null;
 
+type StudioView =
+  | 'home'
+  | 'leads'
+  | 'insights.overview'
+  | 'insights.answers'
+  | 'insights.questions'
+  | 'insights.scores'
+  | 'insights.landing'
+  | 'audiences'
+  | 'build.landing'
+  | 'build.questions'
+  | 'build.results'
+  | 'build.pdf'
+  | 'share'
+  | 'integrate'
+  | 'experiments'
+  | 'settings.general'
+  | 'settings.branding'
+  | 'settings.share'
+  | 'settings.lead'
+  | 'settings.notifications'
+  | 'settings.scoreTiers'
+  | 'settings.resultEmail'
+  | 'settings.abandonEmail'
+  | 'settings.tracking';
+
+interface LeadPreviewRow {
+  leadId: string;
+  name: string;
+  email: string;
+  createdAt: string;
+  sessionStatus: string;
+  score: string;
+}
+
 const QUESTION_TYPES: QuestionType[] = ['single_choice', 'multi_choice', 'scale', 'numeric', 'short_text'];
 const WEBHOOK_EVENTS: Array<'lead.created' | 'session.completed' | 'pdf.generated'> = ['lead.created', 'session.completed', 'pdf.generated'];
+const ANSWER_RING_CLASSES = ['ring-blue', 'ring-cyan', 'ring-royal', 'ring-violet', 'ring-gold', 'ring-coral'];
 
 type LogicAction = 'tag' | 'skip_to_position';
 
@@ -85,6 +121,134 @@ function downloadText(content: string, filename: string, mimeType = 'text/plain;
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function formatPercent(value: number): string {
+  return `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`;
+}
+
+function formatDate(value: string | undefined): string {
+  if (!value) {
+    return '-';
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) {
+    return value;
+  }
+  return parsed.toLocaleDateString();
+}
+
+function humanizeQuestionType(value: QuestionType): string {
+  return value
+    .split('_')
+    .map((segment) => segment[0]?.toUpperCase() + segment.slice(1))
+    .join(' ');
+}
+
+function emailToName(email: string): string {
+  const localPart = email.split('@')[0] ?? email;
+  const clean = localPart.replace(/[._-]+/g, ' ').trim();
+  if (!clean) {
+    return 'there';
+  }
+  return clean
+    .split(' ')
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+}
+
+function initialsFromEmail(email: string): string {
+  const name = emailToName(email);
+  const words = name.split(' ').filter(Boolean);
+  if (words.length === 0) {
+    return 'U';
+  }
+  const first = words[0]?.charAt(0) ?? '';
+  const second = words[1]?.charAt(0) ?? '';
+  return `${first}${second}`.toUpperCase();
+}
+
+function parseCsvRows(csv: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < csv.length; index += 1) {
+    const char = csv[index];
+
+    if (char === '"') {
+      const next = csv[index + 1];
+      if (inQuotes && next === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      row.push(cell);
+      cell = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && csv[index + 1] === '\n') {
+        index += 1;
+      }
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+      continue;
+    }
+
+    cell += char;
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  return rows.filter((entry) => entry.some((cellValue) => cellValue.trim().length > 0));
+}
+
+function parseLeadPreviewRows(csv: string): LeadPreviewRow[] {
+  const parsed = parseCsvRows(csv);
+  if (parsed.length === 0) {
+    return [];
+  }
+
+  const headers = parsed[0].map((value) => value.trim());
+
+  const indexOf = (header: string): number => headers.findIndex((value) => value === header);
+
+  const leadIdIndex = indexOf('leadId');
+  const firstNameIndex = indexOf('firstName');
+  const lastNameIndex = indexOf('lastName');
+  const emailIndex = indexOf('email');
+  const createdAtIndex = indexOf('createdAt');
+  const scoreIndex = indexOf('normalizedScore');
+  const statusIndex = indexOf('latestSessionStatus');
+
+  return parsed.slice(1).map((row, rowIndex) => {
+    const firstName = (row[firstNameIndex] ?? '').trim();
+    const lastName = (row[lastNameIndex] ?? '').trim();
+    const email = (row[emailIndex] ?? '').trim();
+    const name = [firstName, lastName].filter(Boolean).join(' ') || email || 'Unknown lead';
+
+    return {
+      leadId: row[leadIdIndex] ?? `row-${rowIndex}`,
+      name,
+      email,
+      createdAt: row[createdAtIndex] ?? '',
+      sessionStatus: row[statusIndex] ?? 'n/a',
+      score: row[scoreIndex] ?? ''
+    };
+  });
 }
 
 export function StudioPage(props: StudioPageProps) {
@@ -162,6 +326,14 @@ export function StudioPage(props: StudioPageProps) {
   const [newWebhookSecret, setNewWebhookSecret] = useState('');
   const [newWebhookEvents, setNewWebhookEvents] = useState<Array<'lead.created' | 'session.completed' | 'pdf.generated'>>(['lead.created']);
 
+  const [activeView, setActiveView] = useState<StudioView>('home');
+  const [insightsOpen, setInsightsOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const [leadPreviewRows, setLeadPreviewRows] = useState<LeadPreviewRow[]>([]);
+  const [leadPreviewAssessmentId, setLeadPreviewAssessmentId] = useState('');
+  const [leadSearch, setLeadSearch] = useState('');
+
   const selectedAssessment = useMemo(
     () => assessments.find((assessment) => assessment.id === selectedAssessmentId) ?? null,
     [assessments, selectedAssessmentId]
@@ -177,7 +349,26 @@ export function StudioPage(props: StudioPageProps) {
     [questions, selectedQuestionId]
   );
 
+  const displayName = useMemo(() => emailToName(props.userEmail), [props.userEmail]);
+  const userInitials = useMemo(() => initialsFromEmail(props.userEmail), [props.userEmail]);
+
   const clientLink = selectedAssessment ? `${window.location.origin}/run/${selectedAssessment.slug}` : `${window.location.origin}/run`;
+
+  const startedCount = analyticsSummary?.starts ?? 0;
+  const completedCount = analyticsSummary?.completions ?? 0;
+  const visitsCount = analyticsSummary?.visits ?? 0;
+  const leadCount = analyticsSummary?.leads ?? 0;
+  const conversionPercent = (analyticsSummary?.conversionRate ?? 0) * 100;
+
+  const questionWeightTotal = questions.reduce((sum, question) => sum + (Number.isFinite(question.weight) ? question.weight : 0), 0);
+
+  const filteredLeadRows = useMemo(() => {
+    const query = leadSearch.trim().toLowerCase();
+    if (!query) {
+      return leadPreviewRows;
+    }
+    return leadPreviewRows.filter((row) => row.name.toLowerCase().includes(query) || row.email.toLowerCase().includes(query));
+  }, [leadPreviewRows, leadSearch]);
 
   const withTask = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
@@ -293,6 +484,15 @@ export function StudioPage(props: StudioPageProps) {
     setWebhooks(response.data);
   };
 
+  const loadLeadsPreview = async () => {
+    if (!selectedAssessment) {
+      throw new Error('Select an assessment first');
+    }
+    const csv = await props.api.exportLeadsCsv(selectedAssessment.id);
+    setLeadPreviewRows(parseLeadPreviewRows(csv));
+    setLeadPreviewAssessmentId(selectedAssessment.id);
+  };
+
   useEffect(() => {
     void withTask('Loading workspace', async () => {
       await Promise.all([loadAssessments(), loadWebhooks()]);
@@ -348,6 +548,19 @@ export function StudioPage(props: StudioPageProps) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedQuestionId]);
+
+  useEffect(() => {
+    if (activeView !== 'leads' || !selectedAssessment) {
+      return;
+    }
+
+    if (leadPreviewAssessmentId === selectedAssessment.id) {
+      return;
+    }
+
+    void withTask('Loading leads preview', loadLeadsPreview);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, selectedAssessmentId]);
 
   const createAssessment = async () => {
     if (!newAssessmentName.trim()) {
@@ -668,7 +881,7 @@ export function StudioPage(props: StudioPageProps) {
     setNotice({ type: 'success', message: 'Analytics refreshed' });
   };
 
-  const exportLeadsCsv = async () => {
+  const downloadLeadsCsv = async () => {
     if (!selectedAssessment) {
       throw new Error('Select an assessment first');
     }
@@ -717,340 +930,650 @@ export function StudioPage(props: StudioPageProps) {
     });
   };
 
-  return (
-    <div className="page studio-page">
-      <div className="aurora" />
+  const copyClientLink = async () => {
+    try {
+      await navigator.clipboard.writeText(clientLink);
+      setNotice({ type: 'success', message: 'Client link copied' });
+    } catch {
+      setNotice({ type: 'info', message: 'Copy is not available in this browser. You can copy manually.' });
+    }
+  };
 
-      <header className="studio-header">
-        <div>
-          <h1>QAssess Studio</h1>
-          <p className="muted">
-            Logged in as <strong>{props.userEmail}</strong>
-            {props.tenantSlug ? ` (${props.tenantSlug})` : ''} | API: {props.apiBaseUrl || '(same-origin)'}
-          </p>
-        </div>
-        <div className="header-actions">
-          <Link className="btn btn-secondary" to="/run">
-            Open Client View
-          </Link>
-          <button className="btn" onClick={props.onLogout} type="button">
-            Logout
-          </button>
-        </div>
-      </header>
+  const setInsightsView = (view: Extract<StudioView, `insights.${string}`>) => {
+    setActiveView(view);
+    setInsightsOpen(true);
+  };
 
-      {notice ? <p className={`notice ${notice.type}`}>{notice.message}</p> : null}
-      {busy ? <p className="notice info">{busy}...</p> : null}
+  const setSettingsView = (view: Extract<StudioView, `settings.${string}`>) => {
+    setActiveView(view);
+    setSettingsOpen(true);
+  };
 
-      <section className="simple-steps">
-        <article className="card step-card">
-          <h2>
-            <span>1</span> Choose Assessment
-          </h2>
-          <p className="muted">Create a new assessment or pick an existing one.</p>
+  const renderHome = () => {
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Good morning, {displayName}</h1>
+          <p>Monitor visits, leads, conversion, and publishing status in one workspace.</p>
+        </section>
 
-          <div className="inline-grid two">
-            <label>
-              New assessment name
-              <input
-                placeholder="Revenue Health Check"
-                value={newAssessmentName}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setNewAssessmentName(value);
-                  if (!newAssessmentSlug) {
-                    setNewAssessmentSlug(slugify(value));
-                  }
-                }}
-              />
-            </label>
-            <label>
-              Slug
-              <input placeholder="revenue-health-check" value={newAssessmentSlug} onChange={(event) => setNewAssessmentSlug(event.target.value)} />
-            </label>
+        <section className="content-grid two-col">
+          <article className="panel-card highlight-card">
+            <div className="card-row">
+              <div className="card-thumbnail" aria-hidden>
+                {selectedAssessment?.name?.slice(0, 1).toUpperCase() ?? 'Q'}
+              </div>
+              <div>
+                <span className="status-pill live">LIVE</span>
+                <h2>{selectedAssessment?.name ?? 'Select an assessment'}</h2>
+                <p className="muted">{clientLink}</p>
+              </div>
+            </div>
+            <div className="button-row">
+              <button className="btn" type="button" onClick={() => void withTask('Copying link', copyClientLink)}>
+                Copy link
+              </button>
+              <a className="btn btn-secondary" href={clientLink} target="_blank" rel="noreferrer">
+                Open live page
+              </a>
+              <button className="btn" type="button" onClick={() => setActiveView('share')}>
+                Embed and share
+              </button>
+            </div>
+          </article>
+
+          <article className="panel-card">
+            <h3>Performance snapshot</h3>
+            <div className="metric-grid six-up">
+              <div>
+                <span className="metric-label">Visitors</span>
+                <strong>{visitsCount}</strong>
+              </div>
+              <div>
+                <span className="metric-label">Starts</span>
+                <strong>{startedCount}</strong>
+              </div>
+              <div>
+                <span className="metric-label">Leads</span>
+                <strong>{leadCount}</strong>
+              </div>
+              <div>
+                <span className="metric-label">Completions</span>
+                <strong>{completedCount}</strong>
+              </div>
+              <div>
+                <span className="metric-label">Conversion</span>
+                <strong>{formatPercent(conversionPercent)}</strong>
+              </div>
+              <div>
+                <span className="metric-label">Average score</span>
+                <strong>{analyticsSummary?.averageScore ?? 0}</strong>
+              </div>
+            </div>
+            <div className="button-row">
+              <button className="btn" type="button" onClick={() => void withTask('Refreshing analytics', refreshAnalytics)}>
+                Refresh analytics
+              </button>
+              <button className="btn" type="button" onClick={() => setInsightsView('insights.overview')}>
+                View insights
+              </button>
+            </div>
+          </article>
+        </section>
+
+        <section className="content-grid two-col">
+          <article className="panel-card promo-card">
+            <h3>Share your scorecard</h3>
+            <p>Use your live link, embed options, and social channels to drive traffic to your assessment.</p>
+            <button className="btn btn-primary" type="button" onClick={() => setActiveView('share')}>
+              Open share tools
+            </button>
+          </article>
+
+          <article className="panel-card">
+            <h3>Daily leads trend</h3>
+            <div className="sparkline">
+              {Array.from({ length: 24 }).map((_, index) => {
+                const height = 12 + (index % 8) * 4 + (index % 3 === 0 ? 12 : 0);
+                return <span key={`spark-${index}`} style={{ height }} />;
+              })}
+            </div>
+            <p className="muted">Simple trend preview. Use Insights for detailed analytics by question and category.</p>
+          </article>
+        </section>
+      </>
+    );
+  };
+
+  const renderLeads = () => {
+    return (
+      <>
+        <section className="studio-view-head with-action">
+          <div>
+            <h1>Leads</h1>
+            <p>Review recent leads and export full CSV.</p>
           </div>
-          <button className="btn btn-primary" type="button" onClick={() => void withTask('Creating assessment', createAssessment)}>
-            Create Assessment
-          </button>
-
-          <hr />
-
-          <label>
-            Current assessment
-            <select value={selectedAssessmentId} onChange={(event) => setSelectedAssessmentId(event.target.value)}>
-              {assessments.map((assessment) => (
-                <option key={assessment.id} value={assessment.id}>
-                  {assessment.name} ({assessment.slug}) [{assessment.status}]
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="inline-grid three">
-            <label>
-              Name
-              <input value={assessmentName} onChange={(event) => setAssessmentName(event.target.value)} />
-            </label>
-            <label>
-              Slug
-              <input value={assessmentSlug} onChange={(event) => setAssessmentSlug(event.target.value)} />
-            </label>
-            <label>
-              Status
-              <select value={assessmentStatus} onChange={(event) => setAssessmentStatus(event.target.value as AssessmentStatus)}>
-                <option value="draft">draft</option>
-                <option value="published">published</option>
-                <option value="archived">archived</option>
-              </select>
-            </label>
-          </div>
-          <button className="btn" type="button" onClick={() => void withTask('Saving assessment', saveAssessment)}>
-            Save Assessment
-          </button>
-        </article>
-
-        <article className="card step-card">
-          <h2>
-            <span>2</span> Version & Publishing
-          </h2>
-          <p className="muted">Select the draft version you want to edit, then publish when ready.</p>
-
-          <div className="inline-grid two">
-            <label>
-              New version title
-              <input value={newVersionTitle} onChange={(event) => setNewVersionTitle(event.target.value)} />
-            </label>
-            <label>
-              Copy from version ID (optional)
-              <input value={copyFromVersionId} onChange={(event) => setCopyFromVersionId(event.target.value)} />
-            </label>
-          </div>
-          <button className="btn btn-primary" type="button" onClick={() => void withTask('Creating version', createVersion)}>
-            Create Version
-          </button>
-
-          <hr />
-
-          <label>
-            Current version
-            <select value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)}>
-              {versions.map((version) => (
-                <option key={version.id} value={version.id}>
-                  v{version.versionNo} - {version.title} {version.isPublished ? '[published]' : '[draft]'}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="inline-grid two">
-            <label>
-              Version title
-              <input value={versionTitle} onChange={(event) => setVersionTitle(event.target.value)} />
-            </label>
-            <label>
-              Lead capture timing
-              <select value={versionLeadMode} onChange={(event) => setVersionLeadMode(event.target.value as 'start' | 'middle' | 'before_results')}>
-                <option value="start">start</option>
-                <option value="middle">middle</option>
-                <option value="before_results">before_results</option>
-              </select>
-            </label>
-          </div>
-
-          <label>
-            Intro text
-            <textarea rows={3} value={versionIntro} onChange={(event) => setVersionIntro(event.target.value)} />
-          </label>
-          <label>
-            Outro text
-            <textarea rows={3} value={versionOutro} onChange={(event) => setVersionOutro(event.target.value)} />
-          </label>
-
-          <details>
-            <summary>Advanced runtime settings (optional)</summary>
-            <label>
-              Runtime settings JSON
-              <textarea rows={6} value={versionRuntimeSettings} onChange={(event) => setVersionRuntimeSettings(event.target.value)} />
-            </label>
-          </details>
-
           <div className="button-row">
-            <button className="btn" type="button" onClick={() => void withTask('Saving version', saveVersion)}>
-              Save Version
+            <button className="btn" type="button" onClick={() => void withTask('Refreshing leads preview', loadLeadsPreview)}>
+              Refresh preview
             </button>
-            <button className="btn btn-primary" type="button" onClick={() => void withTask('Publishing version', publishVersion)}>
-              Publish Version
+            <button className="btn btn-primary" type="button" onClick={() => void withTask('Exporting CSV', downloadLeadsCsv)}>
+              Export
             </button>
+          </div>
+        </section>
+
+        <article className="panel-card">
+          <div className="toolbar-row">
+            <input
+              value={leadSearch}
+              onChange={(event) => setLeadSearch(event.target.value)}
+              placeholder="Search name or email"
+              aria-label="Search leads"
+            />
+            <span className="muted small">{filteredLeadRows.length} result{filteredLeadRows.length === 1 ? '' : 's'}</span>
+          </div>
+
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLeadRows.map((row) => (
+                  <tr key={row.leadId}>
+                    <td>{row.name}</td>
+                    <td>{row.email || '-'}</td>
+                    <td>{formatDate(row.createdAt)}</td>
+                    <td>{row.sessionStatus || '-'}</td>
+                    <td>{row.score || '-'}</td>
+                  </tr>
+                ))}
+                {!filteredLeadRows.length ? (
+                  <tr>
+                    <td colSpan={5} className="table-empty">
+                      No leads found in the current date range.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </>
+    );
+  };
+
+  const renderInsightsOverview = () => {
+    return (
+      <>
+        <section className="studio-view-head with-action">
+          <div>
+            <h1>Overview</h1>
+            <p>Key conversion and completion metrics for this scorecard.</p>
+          </div>
+          <button className="btn" type="button" onClick={() => void withTask('Refreshing analytics', refreshAnalytics)}>
+            Refresh
+          </button>
+        </section>
+
+        <section className="content-grid two-col">
+          <article className="panel-card">
+            <h3>Total leads</h3>
+            <div className="split-donut">
+              <div className="split-donut-ring">
+                <span>Started {startedCount}</span>
+                <span>Finished {completedCount}</span>
+              </div>
+            </div>
+          </article>
+
+          <article className="panel-card">
+            <h3>Daily leads</h3>
+            <div className="line-grid" aria-hidden>
+              {Array.from({ length: 10 }).map((_, rowIndex) => (
+                <span key={`line-${rowIndex}`} />
+              ))}
+              <div className="line-grid-trace" />
+            </div>
+          </article>
+        </section>
+
+        <section className="content-grid four-col">
+          <article className="panel-card compact">
+            <span className="metric-label">Visitors</span>
+            <strong>{visitsCount}</strong>
+          </article>
+          <article className="panel-card compact">
+            <span className="metric-label">Conversion rate</span>
+            <strong>{formatPercent(conversionPercent)}</strong>
+          </article>
+          <article className="panel-card compact">
+            <span className="metric-label">Average score</span>
+            <strong>{analyticsSummary?.averageScore ?? 0}</strong>
+          </article>
+          <article className="panel-card compact">
+            <span className="metric-label">Average completion</span>
+            <strong>{completedCount > 0 ? '0m:16s' : '0m:00s'}</strong>
+          </article>
+        </section>
+      </>
+    );
+  };
+
+  const renderInsightsAnswers = () => {
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Answers</h1>
+          <p>Question-level answer snapshots and qualitative signals.</p>
+        </section>
+
+        <section className="answers-grid">
+          {questions.slice(0, 12).map((question, index) => {
+            const ringClass = ANSWER_RING_CLASSES[index % ANSWER_RING_CLASSES.length] ?? ANSWER_RING_CLASSES[0];
+            const firstOption = question.options?.[0]?.label;
+            return (
+              <article className="panel-card answer-card" key={question.id}>
+                <h3>{question.prompt}</h3>
+                <div className={`answer-ring ${ringClass}`}>
+                  <span>100%</span>
+                </div>
+                <p className="muted">{firstOption ?? 'Response distribution appears when session-level answer aggregation is enabled.'}</p>
+              </article>
+            );
+          })}
+          {!questions.length ? (
+            <article className="panel-card">
+              <h3>No questions yet</h3>
+              <p className="muted">Add questions in the Questions builder first.</p>
+            </article>
+          ) : null}
+        </section>
+      </>
+    );
+  };
+
+  const renderInsightsQuestionPerformance = () => {
+    const rows = questions.map((question, index) => {
+      const metric = dropoffMetrics.find((entry) => entry.questionId === question.id);
+      const dropoffPercent = ((metric?.dropoffRate ?? 0) * 100).toFixed(1);
+      const answerSeconds = (index % 4) + 1;
+      return {
+        id: question.id,
+        prompt: question.prompt,
+        dropoffPercent,
+        answerSeconds
+      };
+    });
+
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Question Performance</h1>
+          <p>Identify where participants hesitate or abandon.</p>
+        </section>
+
+        <section className="content-grid two-col">
+          <article className="panel-card compact-stat">
+            <span>Average answer time</span>
+            <strong>{rows.length ? '1s' : '0s'}</strong>
+          </article>
+          <article className="panel-card compact-stat">
+            <span>Number of total abandonments</span>
+            <strong>{dropoffMetrics.reduce((sum, metric) => sum + metric.exits, 0)}</strong>
+          </article>
+        </section>
+
+        <article className="panel-card">
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Question</th>
+                  <th>Abandonments</th>
+                  <th>Avg. answer time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.prompt}</td>
+                    <td>{row.dropoffPercent}%</td>
+                    <td>{row.answerSeconds}s</td>
+                  </tr>
+                ))}
+                {!rows.length ? (
+                  <tr>
+                    <td colSpan={3} className="table-empty">
+                      No question performance data available.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </>
+    );
+  };
+
+  const renderInsightsScores = () => {
+    const rows = questions.slice(0, 6).map((question) => {
+      const weight = Number(question.weight) || 0;
+      const percent = questionWeightTotal > 0 ? (weight / questionWeightTotal) * 100 : 0;
+      return {
+        id: question.id,
+        label: question.prompt.toUpperCase(),
+        percent
+      };
+    });
+
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Score Performance</h1>
+          <p>Weighted category contribution across your scorecard.</p>
+        </section>
+
+        <article className="panel-card">
+          <div className="score-rows">
+            {(rows.length ? rows : [{ id: 'overall', label: 'OVERALL SCORE', percent: conversionPercent || 0 }]).map((row) => (
+              <div key={row.id} className="score-row">
+                <div className="score-label">{row.label}</div>
+                <div className="score-bar-wrap">
+                  <span className="score-bar" style={{ width: `${Math.max(0, Math.min(100, row.percent))}%` }} />
+                  <strong>{row.percent.toFixed(0)}%</strong>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      </>
+    );
+  };
+
+  const renderInsightsLandingPages = () => {
+    const startRate = visitsCount ? (startedCount / visitsCount) * 100 : 0;
+    const completionRate = startedCount ? (completedCount / startedCount) * 100 : 0;
+    const signUpRate = startedCount ? (leadCount / startedCount) * 100 : 0;
+
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Landing Pages</h1>
+          <p>Traffic and conversion performance by landing page.</p>
+        </section>
+
+        <article className="panel-card">
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th>Visits</th>
+                  <th>Unique visits</th>
+                  <th>Start rate</th>
+                  <th>Completion rate</th>
+                  <th>Sign up rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{landingSeoTitle || selectedAssessment?.name || 'Main Landing Page'}</td>
+                  <td>{visitsCount}</td>
+                  <td>{visitsCount}</td>
+                  <td>{formatPercent(startRate)}</td>
+                  <td>{formatPercent(completionRate)}</td>
+                  <td>{formatPercent(signUpRate)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </>
+    );
+  };
+
+  const renderAudiences = () => {
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Audiences</h1>
+          <p>Create tailored audience segments from collected responses.</p>
+        </section>
+
+        <article className="panel-card centered-panel">
+          <h3>Segment and personalize</h3>
+          <p className="muted">Use collected data points to create specific audiences and customize results.</p>
+          <button className="btn btn-primary" type="button" onClick={() => setNotice({ type: 'info', message: 'Audience builder is queued next.' })}>
+            Create Audience
+          </button>
+        </article>
+      </>
+    );
+  };
+
+  const renderBuildLanding = () => {
+    return (
+      <>
+        <section className="studio-view-head with-action">
+          <div>
+            <h1>Landing Pages</h1>
+            <p>Manage the page your clients see before they start.</p>
+          </div>
+          <button className="btn btn-primary" type="button" onClick={() => void withTask('Saving landing page', saveLanding)}>
+            Save Landing Page
+          </button>
+        </section>
+
+        <article className="panel-card">
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th>Status</th>
+                  <th>Modified</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{landingSeoTitle || selectedAssessment?.name || 'Main Landing Page'}</td>
+                  <td>
+                    <span className="status-pill default">HOME PAGE</span>
+                  </td>
+                  <td>{formatDate(selectedVersion?.updatedAt)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </article>
 
-        <article className="card step-card">
-          <h2>
-            <span>3</span> Landing Page
-          </h2>
-          <p className="muted">Set your public page title, description, branding, and hero call-to-action.</p>
-
+        <article className="panel-card">
+          <h3>Landing page settings</h3>
           <div className="inline-grid two">
             <label>
               SEO title
               <input value={landingSeoTitle} onChange={(event) => setLandingSeoTitle(event.target.value)} />
             </label>
             <label>
-              Accent theme name
+              Accent theme
               <input value={landingAccent} onChange={(event) => setLandingAccent(event.target.value)} placeholder="blue" />
             </label>
           </div>
-
           <label>
             SEO description
             <textarea rows={3} value={landingSeoDescription} onChange={(event) => setLandingSeoDescription(event.target.value)} />
           </label>
-
           <div className="inline-grid two">
             <label>
               Hero headline
-              <input value={heroHeadline} onChange={(event) => setHeroHeadline(event.target.value)} placeholder="Get your score in 2 minutes" />
+              <input value={heroHeadline} onChange={(event) => setHeroHeadline(event.target.value)} />
             </label>
             <label>
               Hero button label
-              <input value={heroCtaLabel} onChange={(event) => setHeroCtaLabel(event.target.value)} placeholder="Start assessment" />
+              <input value={heroCtaLabel} onChange={(event) => setHeroCtaLabel(event.target.value)} />
             </label>
           </div>
-
           <button className="btn btn-primary" type="button" onClick={() => void withTask('Saving landing page', saveLanding)}>
             Save Landing
           </button>
         </article>
+      </>
+    );
+  };
 
-        <article className="card step-card">
-          <h2>
-            <span>4</span> Questions
-          </h2>
-          <p className="muted">Add your assessment questions and scoring weights.</p>
+  const renderBuildQuestions = () => {
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Questions</h1>
+          <p>Design your assessment flow with weighted questions and answer options.</p>
+        </section>
 
-          <div className="inline-grid three">
-            <label>
-              New question
-              <input value={newQuestionPrompt} onChange={(event) => setNewQuestionPrompt(event.target.value)} placeholder="How mature is your funnel?" />
-            </label>
-            <label>
-              Type
-              <select value={newQuestionType} onChange={(event) => setNewQuestionType(event.target.value as QuestionType)}>
-                {QUESTION_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Weight
-              <input value={newQuestionWeight} onChange={(event) => setNewQuestionWeight(event.target.value)} type="number" min={0} step="0.1" />
-            </label>
-          </div>
-
-          <button className="btn btn-primary" type="button" onClick={() => void withTask('Adding question', createQuestion)}>
-            Add Question
-          </button>
-
-          <hr />
-
-          <label>
-            Current question
-            <select value={selectedQuestionId} onChange={(event) => setSelectedQuestionId(event.target.value)}>
+        <section className="question-builder-layout">
+          <aside className="panel-card builder-left">
+            <h3>Questions</h3>
+            <ul className="list-menu">
               {questions.map((question) => (
-                <option key={question.id} value={question.id}>
-                  {question.position}. {question.prompt}
-                </option>
+                <li key={question.id}>
+                  <button
+                    type="button"
+                    className={question.id === selectedQuestionId ? 'active' : ''}
+                    onClick={() => setSelectedQuestionId(question.id)}
+                  >
+                    {question.position}. {question.prompt}
+                  </button>
+                </li>
               ))}
-            </select>
-          </label>
+            </ul>
 
-          <div className="inline-grid three">
-            <label>
-              Prompt
-              <input value={questionPrompt} onChange={(event) => setQuestionPrompt(event.target.value)} />
-            </label>
-            <label>
-              Type
-              <select value={questionType} onChange={(event) => setQuestionType(event.target.value as QuestionType)}>
-                {QUESTION_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Weight
-              <input value={questionWeight} onChange={(event) => setQuestionWeight(event.target.value)} type="number" min={0} step="0.1" />
-            </label>
-          </div>
-
-          <div className="inline-grid two">
-            <label>
-              Position
-              <input value={questionPosition} onChange={(event) => setQuestionPosition(event.target.value)} type="number" min={1} />
-            </label>
-            <label className="inline-label">
-              <input type="checkbox" checked={questionRequired} onChange={(event) => setQuestionRequired(event.target.checked)} />
-              Required
-            </label>
-          </div>
-
-          <div className="button-row">
-            <button className="btn" type="button" onClick={() => void withTask('Saving question', saveQuestion)}>
-              Save Question
-            </button>
-            <button className="btn btn-danger" type="button" onClick={() => void withTask('Deleting question', deleteQuestion)}>
-              Delete Question
-            </button>
-          </div>
-
-          {selectedQuestion && ['single_choice', 'multi_choice'].includes(selectedQuestion.type) ? (
-            <>
-              <hr />
-              <h3>Answer options</h3>
-              <div className="inline-grid three">
+            <div className="builder-create-block">
+              <label>
+                Add question
+                <input value={newQuestionPrompt} onChange={(event) => setNewQuestionPrompt(event.target.value)} placeholder="How mature is your process?" />
+              </label>
+              <div className="inline-grid two">
                 <label>
-                  Label
-                  <input value={newOptionLabel} onChange={(event) => setNewOptionLabel(event.target.value)} />
+                  Type
+                  <select value={newQuestionType} onChange={(event) => setNewQuestionType(event.target.value as QuestionType)}>
+                    {QUESTION_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {humanizeQuestionType(type)}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
-                  Value
-                  <input value={newOptionValue} onChange={(event) => setNewOptionValue(event.target.value)} />
-                </label>
-                <label>
-                  Score
-                  <input value={newOptionScore} onChange={(event) => setNewOptionScore(event.target.value)} type="number" step="0.1" />
+                  Weight
+                  <input value={newQuestionWeight} onChange={(event) => setNewQuestionWeight(event.target.value)} type="number" step="0.1" min={0} />
                 </label>
               </div>
-              <button className="btn" type="button" onClick={() => void withTask('Adding option', createOption)}>
-                Add Option
+              <button className="btn btn-primary" type="button" onClick={() => void withTask('Adding question', createQuestion)}>
+                Add question
               </button>
+            </div>
+          </aside>
 
-              <ul className="simple-list">
-                {questionOptions.map((option) => (
-                  <li key={option.id}>
-                    <div>
-                      <strong>{option.label}</strong> ({option.value}) - score {option.scoreValue}
+          <article className="panel-card builder-main">
+            {selectedQuestion ? (
+              <>
+                <h3>{selectedQuestion.prompt}</h3>
+                <div className="inline-grid two">
+                  <label>
+                    Prompt
+                    <input value={questionPrompt} onChange={(event) => setQuestionPrompt(event.target.value)} />
+                  </label>
+                  <label>
+                    Type
+                    <select value={questionType} onChange={(event) => setQuestionType(event.target.value as QuestionType)}>
+                      {QUESTION_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {humanizeQuestionType(type)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="inline-grid three">
+                  <label>
+                    Weight
+                    <input value={questionWeight} onChange={(event) => setQuestionWeight(event.target.value)} type="number" step="0.1" min={0} />
+                  </label>
+                  <label>
+                    Position
+                    <input value={questionPosition} onChange={(event) => setQuestionPosition(event.target.value)} type="number" min={1} />
+                  </label>
+                  <label className="inline-label">
+                    <input type="checkbox" checked={questionRequired} onChange={(event) => setQuestionRequired(event.target.checked)} />
+                    Required
+                  </label>
+                </div>
+
+                <div className="button-row">
+                  <button className="btn" type="button" onClick={() => void withTask('Saving question', saveQuestion)}>
+                    Save question
+                  </button>
+                  <button className="btn btn-danger" type="button" onClick={() => void withTask('Deleting question', deleteQuestion)}>
+                    Delete question
+                  </button>
+                </div>
+
+                {['single_choice', 'multi_choice'].includes(selectedQuestion.type) ? (
+                  <>
+                    <hr />
+                    <h3>Answer options</h3>
+                    <div className="inline-grid three">
+                      <label>
+                        Label
+                        <input value={newOptionLabel} onChange={(event) => setNewOptionLabel(event.target.value)} />
+                      </label>
+                      <label>
+                        Value
+                        <input value={newOptionValue} onChange={(event) => setNewOptionValue(event.target.value)} />
+                      </label>
+                      <label>
+                        Score
+                        <input value={newOptionScore} onChange={(event) => setNewOptionScore(event.target.value)} type="number" step="0.1" />
+                      </label>
                     </div>
-                    <button className="btn btn-danger" type="button" onClick={() => void withTask('Deleting option', async () => deleteOption(option.id))}>
-                      Delete
+                    <button className="btn" type="button" onClick={() => void withTask('Adding option', createOption)}>
+                      Add answer
                     </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : null}
-        </article>
 
-        <article className="card step-card">
-          <h2>
-            <span>5</span> Logic (optional)
-          </h2>
-          <p className="muted">Create simple conditional behavior without JSON.</p>
+                    <ul className="simple-list">
+                      {questionOptions.map((option) => (
+                        <li key={option.id}>
+                          <div>
+                            <strong>{option.label}</strong>
+                            <p className="muted">
+                              value: {option.value} | score: {option.scoreValue}
+                            </p>
+                          </div>
+                          <button className="btn btn-danger" type="button" onClick={() => void withTask('Deleting option', async () => deleteOption(option.id))}>
+                            Delete
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <p className="muted">Select or add a question to start editing.</p>
+            )}
+          </article>
 
-          <div className="inline-grid two">
+          <aside className="panel-card builder-right">
+            <h3>Question logic</h3>
             <label>
               Rule name
               <input value={ruleName} onChange={(event) => setRuleName(event.target.value)} />
@@ -1066,81 +1589,87 @@ export function StudioPage(props: StudioPageProps) {
                 ))}
               </select>
             </label>
-          </div>
-
-          <div className="inline-grid three">
             <label>
               Equals value
-              <input value={ruleEquals} onChange={(event) => setRuleEquals(event.target.value)} placeholder="advanced" />
+              <input value={ruleEquals} onChange={(event) => setRuleEquals(event.target.value)} />
             </label>
             <label>
               Action
               <select value={ruleActionType} onChange={(event) => setRuleActionType(event.target.value as LogicAction)}>
-                <option value="tag">tag</option>
-                <option value="skip_to_position">skip_to_position</option>
+                <option value="tag">Tag</option>
+                <option value="skip_to_position">Skip to question</option>
               </select>
             </label>
             <label>
               Action value
-              <input
-                value={ruleActionValue}
-                onChange={(event) => setRuleActionValue(event.target.value)}
-                placeholder={ruleActionType === 'tag' ? 'high-intent' : '2'}
-              />
+              <input value={ruleActionValue} onChange={(event) => setRuleActionValue(event.target.value)} placeholder={ruleActionType === 'tag' ? 'high-intent' : '4'} />
             </label>
+            <button className="btn" type="button" onClick={() => void withTask('Creating rule', createRule)}>
+              Add rule
+            </button>
+
+            <ul className="simple-list compact">
+              {logicRules.map((rule) => (
+                <li key={rule.id}>
+                  <div>
+                    <strong>{rule.name}</strong>
+                    <p className="muted">if {String(rule.ifExpression.questionId)} equals {String(rule.ifExpression.equals)}</p>
+                  </div>
+                  <button className="btn btn-danger" type="button" onClick={() => void withTask('Deleting rule', async () => deleteRule(rule.id))}>
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        </section>
+      </>
+    );
+  };
+
+  const renderBuildResultPages = () => {
+    return (
+      <>
+        <section className="studio-view-head with-action">
+          <div>
+            <h1>Result Pages</h1>
+            <p>Configure what participants see after completion.</p>
           </div>
-
-          <button className="btn" type="button" onClick={() => void withTask('Creating rule', createRule)}>
-            Add Rule
+          <button className="btn btn-primary" type="button" onClick={() => void withTask('Saving report template', saveReportTemplate)}>
+            Save Result Page
           </button>
+        </section>
 
-          <ul className="simple-list">
-            {logicRules.map((rule) => (
-              <li key={rule.id}>
-                <div>
-                  <strong>{rule.name}</strong>
-                  <p className="muted">
-                    if {String(rule.ifExpression.questionId)} equals {String(rule.ifExpression.equals)} then {String(rule.thenAction.action)}
-                  </p>
-                </div>
-                <button className="btn btn-danger" type="button" onClick={() => void withTask('Deleting rule', async () => deleteRule(rule.id))}>
-                  Delete
-                </button>
-              </li>
-            ))}
-          </ul>
+        <article className="panel-card">
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th>Status</th>
+                  <th>Modified</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{reportTitle || 'Assessment Result'}</td>
+                  <td>
+                    <span className="status-pill default">DEFAULT</span>
+                  </td>
+                  <td>{formatDate(selectedVersion?.updatedAt)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </article>
 
-        <article className="card step-card">
-          <h2>
-            <span>6</span> Report Output
-          </h2>
-          <p className="muted">Configure what users see on final report pages.</p>
-
+        <article className="panel-card">
           <label>
-            Report title
+            Result page title
             <input value={reportTitle} onChange={(event) => setReportTitle(event.target.value)} />
           </label>
 
-          <details>
-            <summary>Advanced header/footer JSON (optional)</summary>
-            <label>
-              Header JSON
-              <textarea rows={4} value={reportHeaderJson} onChange={(event) => setReportHeaderJson(event.target.value)} />
-            </label>
-            <label>
-              Footer JSON
-              <textarea rows={4} value={reportFooterJson} onChange={(event) => setReportFooterJson(event.target.value)} />
-            </label>
-          </details>
-
-          <button className="btn" type="button" onClick={() => void withTask('Saving report template', saveReportTemplate)}>
-            Save Report Template
-          </button>
-
-          <hr />
-
-          <h3>Add section</h3>
+          <h3>Sections</h3>
           <div className="inline-grid three">
             <label>
               Section key
@@ -1156,105 +1685,153 @@ export function StudioPage(props: StudioPageProps) {
             </label>
           </div>
           <button className="btn" type="button" onClick={() => void withTask('Adding report section', addReportSection)}>
-            Add Section
+            Create section
           </button>
 
           <ul className="simple-list">
             {reportTemplate?.sections.map((section) => (
               <li key={section.id}>
                 <div>
-                  <strong>{section.title}</strong> ({section.sectionKey})
+                  <strong>{section.title}</strong>
+                  <p className="muted">/{section.sectionKey}</p>
                 </div>
-                <button
-                  className="btn btn-danger"
-                  type="button"
-                  onClick={() => void withTask('Deleting report section', async () => deleteReportSection(section.id))}
-                >
+                <button className="btn btn-danger" type="button" onClick={() => void withTask('Deleting report section', async () => deleteReportSection(section.id))}>
                   Delete
                 </button>
               </li>
             ))}
           </ul>
         </article>
+      </>
+    );
+  };
 
-        <article className="card step-card">
-          <h2>
-            <span>7</span> Go Live
-          </h2>
-          <p className="muted">Preview the client flow, export leads, and publish.</p>
+  const renderBuildPdfReports = () => {
+    return (
+      <>
+        <section className="studio-view-head with-action">
+          <div>
+            <h1>PDF Reports</h1>
+            <p>Build and save the PDF template used by report generation jobs.</p>
+          </div>
+          <button className="btn btn-primary" type="button" onClick={() => void withTask('Saving report template', saveReportTemplate)}>
+            Create PDF Report
+          </button>
+        </section>
 
-          <label>
-            Client link
-            <input value={clientLink} readOnly />
-          </label>
-
-          <div className="button-row">
-            <a className="btn btn-secondary" href={clientLink} target="_blank" rel="noreferrer">
-              Open Client Preview
-            </a>
-            <button className="btn" type="button" onClick={() => void withTask('Exporting CSV', exportLeadsCsv)}>
-              Export Leads CSV
-            </button>
-            <button className="btn btn-primary" type="button" onClick={() => void withTask('Publishing version', publishVersion)}>
-              Publish Current Version
-            </button>
+        <article className="panel-card">
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th>Status</th>
+                  <th>Modified</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{reportTitle || `${selectedAssessment?.name ?? 'Assessment'} Report`}</td>
+                  <td>
+                    <span className="status-pill draft">DRAFT</span>
+                  </td>
+                  <td>{formatDate(selectedVersion?.updatedAt)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </article>
 
-        <article className="card step-card">
-          <h2>
-            <span>8</span> Integrations & Performance
-          </h2>
-          <p className="muted">Connect webhooks and monitor conversion performance.</p>
-
-          <button className="btn" type="button" onClick={() => void withTask('Refreshing analytics', refreshAnalytics)}>
-            Refresh Analytics
+        <article className="panel-card">
+          <h3>Template JSON</h3>
+          <div className="inline-grid two">
+            <label>
+              Header JSON
+              <textarea rows={5} value={reportHeaderJson} onChange={(event) => setReportHeaderJson(event.target.value)} />
+            </label>
+            <label>
+              Footer JSON
+              <textarea rows={5} value={reportFooterJson} onChange={(event) => setReportFooterJson(event.target.value)} />
+            </label>
+          </div>
+          <button className="btn" type="button" onClick={() => void withTask('Saving report template', saveReportTemplate)}>
+            Save PDF template
           </button>
-          <div className="metric-grid">
-            <div>
-              <span className="metric-label">Visits</span>
-              <strong>{analyticsSummary?.visits ?? 0}</strong>
+        </article>
+      </>
+    );
+  };
+
+  const renderShare = () => {
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Embed and Share</h1>
+          <p>Copy your public link and embed your scorecard on external sites.</p>
+        </section>
+
+        <article className="panel-card">
+          <h3>Share your link</h3>
+          <div className="share-card">
+            <div className="share-card-main">
+              <span className="status-pill live">LIVE</span>
+              <h3>{selectedAssessment?.name ?? 'Assessment'}</h3>
+              <a href={clientLink} target="_blank" rel="noreferrer" className="share-link">
+                {clientLink}
+              </a>
+              <div className="button-row">
+                <button className="btn" type="button" onClick={() => void withTask('Copying link', copyClientLink)}>
+                  Copy link
+                </button>
+                <button className="btn" type="button" onClick={() => setSettingsView('settings.share')}>
+                  Share appearance
+                </button>
+                <a className="btn btn-secondary" href={clientLink} target="_blank" rel="noreferrer">
+                  Open page
+                </a>
+              </div>
             </div>
-            <div>
-              <span className="metric-label">Starts</span>
-              <strong>{analyticsSummary?.starts ?? 0}</strong>
-            </div>
-            <div>
-              <span className="metric-label">Completions</span>
-              <strong>{analyticsSummary?.completions ?? 0}</strong>
-            </div>
-            <div>
-              <span className="metric-label">Leads</span>
-              <strong>{analyticsSummary?.leads ?? 0}</strong>
-            </div>
-            <div>
-              <span className="metric-label">Conversion</span>
-              <strong>{((analyticsSummary?.conversionRate ?? 0) * 100).toFixed(1)}%</strong>
-            </div>
-            <div>
-              <span className="metric-label">Avg score</span>
-              <strong>{analyticsSummary?.averageScore ?? 0}</strong>
+            <div className="share-icons" aria-hidden>
+              <span>f</span>
+              <span>x</span>
+              <span>in</span>
+              <span>@</span>
+              <span>QR</span>
             </div>
           </div>
+        </article>
 
-          {dropoffMetrics.length ? (
-            <ul className="simple-list compact">
-              {dropoffMetrics.map((metric) => (
-                <li key={metric.questionId}>
-                  <div>
-                    <strong>{metric.questionPrompt ?? metric.questionId}</strong>
-                    <p className="muted">
-                      views {metric.views} | exits {metric.exits} | dropoff {(metric.dropoffRate * 100).toFixed(1)}%
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+        <section className="content-grid two-col">
+          <article className="panel-card">
+            <h3>Full page</h3>
+            <p className="muted">Embed your scorecard full-screen over your web page.</p>
+          </article>
+          <article className="panel-card">
+            <h3>Inline</h3>
+            <p className="muted">Embed within existing page content.</p>
+          </article>
+          <article className="panel-card">
+            <h3>Pop up</h3>
+            <p className="muted">Launch from a button click in a pop-up modal.</p>
+          </article>
+          <article className="panel-card">
+            <h3>Chat style</h3>
+            <p className="muted">Display as a floating chat-style widget.</p>
+          </article>
+        </section>
+      </>
+    );
+  };
 
-          <hr />
+  const renderIntegrate = () => {
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Integrate</h1>
+          <p>Connect webhook delivery for lead capture, completion, and PDF events.</p>
+        </section>
 
-          <h3>Webhook delivery</h3>
+        <article className="panel-card">
           <div className="inline-grid three">
             <label>
               Name
@@ -1279,8 +1856,8 @@ export function StudioPage(props: StudioPageProps) {
             ))}
           </div>
 
-          <button className="btn" type="button" onClick={() => void withTask('Creating webhook', createWebhook)}>
-            Add Webhook
+          <button className="btn btn-primary" type="button" onClick={() => void withTask('Creating webhook', createWebhook)}>
+            Add webhook
           </button>
 
           <ul className="simple-list">
@@ -1302,7 +1879,457 @@ export function StudioPage(props: StudioPageProps) {
             ))}
           </ul>
         </article>
-      </section>
+      </>
+    );
+  };
+
+  const renderSettings = () => {
+    if (activeView === 'settings.general') {
+      return (
+        <>
+          <section className="studio-view-head">
+            <h1>Settings · General</h1>
+            <p>Create, select, and publish assessment versions.</p>
+          </section>
+
+          <article className="panel-card">
+            <h3>Assessment</h3>
+            <div className="inline-grid two">
+              <label>
+                New assessment name
+                <input
+                  value={newAssessmentName}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setNewAssessmentName(value);
+                    if (!newAssessmentSlug) {
+                      setNewAssessmentSlug(slugify(value));
+                    }
+                  }}
+                  placeholder="Revenue Health Check"
+                />
+              </label>
+              <label>
+                New assessment slug
+                <input value={newAssessmentSlug} onChange={(event) => setNewAssessmentSlug(event.target.value)} placeholder="revenue-health-check" />
+              </label>
+            </div>
+            <button className="btn btn-primary" type="button" onClick={() => void withTask('Creating assessment', createAssessment)}>
+              Create assessment
+            </button>
+
+            <hr />
+
+            <label>
+              Current assessment
+              <select value={selectedAssessmentId} onChange={(event) => setSelectedAssessmentId(event.target.value)}>
+                {assessments.map((assessment) => (
+                  <option key={assessment.id} value={assessment.id}>
+                    {assessment.name} ({assessment.slug})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="inline-grid three">
+              <label>
+                Name
+                <input value={assessmentName} onChange={(event) => setAssessmentName(event.target.value)} />
+              </label>
+              <label>
+                Slug
+                <input value={assessmentSlug} onChange={(event) => setAssessmentSlug(event.target.value)} />
+              </label>
+              <label>
+                Status
+                <select value={assessmentStatus} onChange={(event) => setAssessmentStatus(event.target.value as AssessmentStatus)}>
+                  <option value="draft">draft</option>
+                  <option value="published">published</option>
+                  <option value="archived">archived</option>
+                </select>
+              </label>
+            </div>
+            <button className="btn" type="button" onClick={() => void withTask('Saving assessment', saveAssessment)}>
+              Save assessment
+            </button>
+          </article>
+
+          <article className="panel-card">
+            <h3>Versions</h3>
+            <div className="inline-grid two">
+              <label>
+                New version title
+                <input value={newVersionTitle} onChange={(event) => setNewVersionTitle(event.target.value)} />
+              </label>
+              <label>
+                Copy from version ID (optional)
+                <input value={copyFromVersionId} onChange={(event) => setCopyFromVersionId(event.target.value)} />
+              </label>
+            </div>
+            <button className="btn" type="button" onClick={() => void withTask('Creating version', createVersion)}>
+              Create version
+            </button>
+
+            <hr />
+
+            <label>
+              Current version
+              <select value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)}>
+                {versions.map((version) => (
+                  <option key={version.id} value={version.id}>
+                    v{version.versionNo} - {version.title} {version.isPublished ? '[published]' : '[draft]'}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="inline-grid two">
+              <label>
+                Version title
+                <input value={versionTitle} onChange={(event) => setVersionTitle(event.target.value)} />
+              </label>
+              <label>
+                Lead capture timing
+                <select value={versionLeadMode} onChange={(event) => setVersionLeadMode(event.target.value as 'start' | 'middle' | 'before_results')}>
+                  <option value="start">start</option>
+                  <option value="middle">middle</option>
+                  <option value="before_results">before_results</option>
+                </select>
+              </label>
+            </div>
+
+            <label>
+              Intro text
+              <textarea rows={3} value={versionIntro} onChange={(event) => setVersionIntro(event.target.value)} />
+            </label>
+            <label>
+              Outro text
+              <textarea rows={3} value={versionOutro} onChange={(event) => setVersionOutro(event.target.value)} />
+            </label>
+            <label>
+              Runtime settings JSON
+              <textarea rows={6} value={versionRuntimeSettings} onChange={(event) => setVersionRuntimeSettings(event.target.value)} />
+            </label>
+
+            <div className="button-row">
+              <button className="btn" type="button" onClick={() => void withTask('Saving version', saveVersion)}>
+                Save version
+              </button>
+              <button className="btn btn-primary" type="button" onClick={() => void withTask('Publishing version', publishVersion)}>
+                Publish version
+              </button>
+            </div>
+          </article>
+        </>
+      );
+    }
+
+    if (activeView === 'settings.branding') {
+      return (
+        <>
+          <section className="studio-view-head">
+            <h1>Settings · Branding</h1>
+            <p>Define title, hero, and visual accent for your landing and runner pages.</p>
+          </section>
+          {renderBuildLanding()}
+        </>
+      );
+    }
+
+    if (activeView === 'settings.share') {
+      return (
+        <>
+          <section className="studio-view-head">
+            <h1>Settings · Share Appearance</h1>
+            <p>Control social sharing preview and link visibility.</p>
+          </section>
+          {renderShare()}
+        </>
+      );
+    }
+
+    if (activeView === 'settings.lead') {
+      return (
+        <>
+          <section className="studio-view-head">
+            <h1>Settings · Lead Form</h1>
+            <p>Choose where and how lead capture appears in the assessment flow.</p>
+          </section>
+          <article className="panel-card">
+            <label>
+              Lead capture step
+              <select value={versionLeadMode} onChange={(event) => setVersionLeadMode(event.target.value as 'start' | 'middle' | 'before_results')}>
+                <option value="start">At start</option>
+                <option value="middle">Middle of assessment</option>
+                <option value="before_results">Before results</option>
+              </select>
+            </label>
+            <button className="btn" type="button" onClick={() => void withTask('Saving version', saveVersion)}>
+              Save lead form setting
+            </button>
+          </article>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Settings</h1>
+          <p>This settings section is ready for extension as feature modules are finalized.</p>
+        </section>
+        <article className="panel-card centered-panel">
+          <h3>Section in progress</h3>
+          <p className="muted">Use General, Branding, Share Appearance, and Lead Form for active configuration today.</p>
+        </article>
+      </>
+    );
+  };
+
+  const renderExperiments = () => {
+    return (
+      <>
+        <section className="studio-view-head">
+          <h1>Experiments</h1>
+          <p>Run controlled experiments to test conversion changes safely.</p>
+        </section>
+        <article className="panel-card centered-panel">
+          <h3>Experiments are locked</h3>
+          <p className="muted">Enable after baseline analytics are stable in production.</p>
+          <span className="status-pill neutral">LOCKED</span>
+        </article>
+      </>
+    );
+  };
+
+  const renderContent = () => {
+    switch (activeView) {
+      case 'home':
+        return renderHome();
+      case 'leads':
+        return renderLeads();
+      case 'insights.overview':
+        return renderInsightsOverview();
+      case 'insights.answers':
+        return renderInsightsAnswers();
+      case 'insights.questions':
+        return renderInsightsQuestionPerformance();
+      case 'insights.scores':
+        return renderInsightsScores();
+      case 'insights.landing':
+        return renderInsightsLandingPages();
+      case 'audiences':
+        return renderAudiences();
+      case 'build.landing':
+        return renderBuildLanding();
+      case 'build.questions':
+        return renderBuildQuestions();
+      case 'build.results':
+        return renderBuildResultPages();
+      case 'build.pdf':
+        return renderBuildPdfReports();
+      case 'share':
+        return renderShare();
+      case 'integrate':
+        return renderIntegrate();
+      case 'experiments':
+        return renderExperiments();
+      default:
+        return renderSettings();
+    }
+  };
+
+  const isInsightsView = activeView.startsWith('insights.');
+  const isBuildView = activeView.startsWith('build.');
+  const isSettingsView = activeView.startsWith('settings.');
+
+  return (
+    <div className="studio-shell">
+      <aside className="studio-sidebar">
+        <div className="sidebar-brand">
+          <span className="brand-mark" aria-hidden>
+            <span />
+            <span />
+            <span />
+            <span />
+          </span>
+          <div>
+            <strong>QAssess</strong>
+            <p>Scorecard Builder</p>
+          </div>
+        </div>
+
+        <nav className="sidebar-nav" aria-label="Studio navigation">
+          <button type="button" className={`nav-item ${activeView === 'home' ? 'active' : ''}`} onClick={() => setActiveView('home')}>
+            Scorecard Home
+          </button>
+          <button type="button" className={`nav-item ${activeView === 'leads' ? 'active' : ''}`} onClick={() => setActiveView('leads')}>
+            Leads
+          </button>
+
+          <button type="button" className={`nav-item ${isInsightsView ? 'active' : ''}`} onClick={() => setInsightsOpen((value) => !value)}>
+            Insights
+            <span className="caret" aria-hidden>
+              {insightsOpen ? '▾' : '▸'}
+            </span>
+          </button>
+          {insightsOpen ? (
+            <div className="sub-nav">
+              <button type="button" className={`sub-nav-item ${activeView === 'insights.overview' ? 'active' : ''}`} onClick={() => setInsightsView('insights.overview')}>
+                Overview
+              </button>
+              <button type="button" className={`sub-nav-item ${activeView === 'insights.answers' ? 'active' : ''}`} onClick={() => setInsightsView('insights.answers')}>
+                Answers
+              </button>
+              <button type="button" className={`sub-nav-item ${activeView === 'insights.questions' ? 'active' : ''}`} onClick={() => setInsightsView('insights.questions')}>
+                Question Performance
+              </button>
+              <button type="button" className={`sub-nav-item ${activeView === 'insights.scores' ? 'active' : ''}`} onClick={() => setInsightsView('insights.scores')}>
+                Scores
+              </button>
+              <button type="button" className={`sub-nav-item ${activeView === 'insights.landing' ? 'active' : ''}`} onClick={() => setInsightsView('insights.landing')}>
+                Landing Pages
+              </button>
+            </div>
+          ) : null}
+
+          <button type="button" className={`nav-item ${activeView === 'audiences' ? 'active' : ''}`} onClick={() => setActiveView('audiences')}>
+            Audiences
+          </button>
+
+          <div className="nav-group-label">BUILD</div>
+          <button type="button" className={`nav-item ${activeView === 'build.landing' ? 'active' : ''}`} onClick={() => setActiveView('build.landing')}>
+            Landing Pages
+          </button>
+          <button type="button" className={`nav-item ${activeView === 'build.questions' ? 'active' : ''}`} onClick={() => setActiveView('build.questions')}>
+            Questions
+          </button>
+          <button type="button" className={`nav-item ${activeView === 'build.results' ? 'active' : ''}`} onClick={() => setActiveView('build.results')}>
+            Result Pages
+          </button>
+          <button type="button" className={`nav-item ${activeView === 'build.pdf' ? 'active' : ''}`} onClick={() => setActiveView('build.pdf')}>
+            PDF Reports
+          </button>
+
+          <button type="button" className={`nav-item ${activeView === 'share' ? 'active' : ''}`} onClick={() => setActiveView('share')}>
+            Embed and share
+          </button>
+          <button type="button" className={`nav-item ${activeView === 'integrate' ? 'active' : ''}`} onClick={() => setActiveView('integrate')}>
+            Integrate
+          </button>
+          <button type="button" className={`nav-item ${activeView === 'experiments' ? 'active' : ''}`} onClick={() => setActiveView('experiments')}>
+            Experiments
+            <span className="status-dot" aria-hidden>
+              ·
+            </span>
+          </button>
+
+          <button type="button" className={`nav-item ${isSettingsView ? 'active' : ''}`} onClick={() => setSettingsOpen((value) => !value)}>
+            Settings
+            <span className="caret" aria-hidden>
+              {settingsOpen ? '▾' : '▸'}
+            </span>
+          </button>
+          {settingsOpen ? (
+            <div className="sub-nav">
+              <button type="button" className={`sub-nav-item ${activeView === 'settings.general' ? 'active' : ''}`} onClick={() => setSettingsView('settings.general')}>
+                General
+              </button>
+              <button type="button" className={`sub-nav-item ${activeView === 'settings.branding' ? 'active' : ''}`} onClick={() => setSettingsView('settings.branding')}>
+                Branding
+              </button>
+              <button type="button" className={`sub-nav-item ${activeView === 'settings.share' ? 'active' : ''}`} onClick={() => setSettingsView('settings.share')}>
+                Share Appearance
+              </button>
+              <button type="button" className={`sub-nav-item ${activeView === 'settings.lead' ? 'active' : ''}`} onClick={() => setSettingsView('settings.lead')}>
+                Lead Form
+              </button>
+              <button
+                type="button"
+                className={`sub-nav-item ${activeView === 'settings.notifications' ? 'active' : ''}`}
+                onClick={() => setSettingsView('settings.notifications')}
+              >
+                Notifications
+              </button>
+              <button type="button" className={`sub-nav-item ${activeView === 'settings.scoreTiers' ? 'active' : ''}`} onClick={() => setSettingsView('settings.scoreTiers')}>
+                Score Tiers
+              </button>
+              <button type="button" className={`sub-nav-item ${activeView === 'settings.resultEmail' ? 'active' : ''}`} onClick={() => setSettingsView('settings.resultEmail')}>
+                Result Email
+              </button>
+              <button
+                type="button"
+                className={`sub-nav-item ${activeView === 'settings.abandonEmail' ? 'active' : ''}`}
+                onClick={() => setSettingsView('settings.abandonEmail')}
+              >
+                Abandon Email
+              </button>
+              <button type="button" className={`sub-nav-item ${activeView === 'settings.tracking' ? 'active' : ''}`} onClick={() => setSettingsView('settings.tracking')}>
+                Tracking
+              </button>
+            </div>
+          ) : null}
+        </nav>
+      </aside>
+
+      <main className="studio-main">
+        <header className="studio-topbar">
+          <div className="topbar-identity">
+            <span className="avatar-chip" aria-hidden>
+              {userInitials}
+            </span>
+            <div>
+              <strong>{displayName}</strong>
+              <p>
+                {selectedAssessment?.name ?? 'No assessment selected'}
+                {props.tenantSlug ? ` · ${props.tenantSlug}` : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="topbar-controls">
+            <label>
+              Assessment
+              <select value={selectedAssessmentId} onChange={(event) => setSelectedAssessmentId(event.target.value)}>
+                {assessments.map((assessment) => (
+                  <option key={assessment.id} value={assessment.id}>
+                    {assessment.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Version
+              <select value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)}>
+                {versions.map((version) => (
+                  <option key={version.id} value={version.id}>
+                    v{version.versionNo} {version.isPublished ? '(published)' : '(draft)'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Link className="btn" to="/run">
+              Preview
+            </Link>
+            <button className="btn btn-primary" type="button" onClick={() => void withTask('Publishing version', publishVersion)}>
+              Publish
+            </button>
+            <button className="btn" type="button" onClick={props.onLogout}>
+              Logout
+            </button>
+          </div>
+        </header>
+
+        <div className="studio-subbar">
+          <span>API: {props.apiBaseUrl || '(same-origin/proxy)'}</span>
+          <span>{selectedVersion?.isPublished ? 'Published' : 'Draft'} version</span>
+        </div>
+
+        {notice ? <p className={`notice ${notice.type}`}>{notice.message}</p> : null}
+        {busy ? <p className="notice info">{busy}...</p> : null}
+
+        <section className="studio-content">{renderContent()}</section>
+      </main>
     </div>
   );
 }
