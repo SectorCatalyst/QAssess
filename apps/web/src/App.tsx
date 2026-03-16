@@ -71,37 +71,70 @@ function LoginPanel(props: LoginPanelProps) {
 
   return (
     <div className="page login-page">
-      <div className="aurora" />
-      <section className="card login-card">
-        <h1>QAssess Studio</h1>
-        <p className="muted">Build assessments, run client sessions, and deliver reports from one interface.</p>
-        <form onSubmit={submit} className="form-grid">
-          <label>
-            API Base URL
-            <input
-              value={apiBaseUrl}
-              onChange={(event) => setApiBaseUrl(event.target.value)}
-              placeholder="Leave blank to use same-origin"
-            />
-          </label>
-          <label>
-            Email
-            <input value={email} onChange={(event) => setEmail(event.target.value)} required type="email" />
-          </label>
-          <label>
-            Password
-            <input value={password} onChange={(event) => setPassword(event.target.value)} required type="password" />
-          </label>
-          <label>
-            Tenant Slug
-            <input value={tenantSlug} onChange={(event) => setTenantSlug(event.target.value)} placeholder="acme" />
-          </label>
-          <button disabled={loading} type="submit" className="btn btn-primary">
-            {loading ? 'Signing In...' : 'Sign In'}
-          </button>
-        </form>
-        {notice ? <p className={`notice ${notice.type}`}>{notice.message}</p> : null}
-      </section>
+      <div className="login-shell">
+        <section className="login-hero">
+          <span className="login-eyebrow">Assessment Platform</span>
+          <h1>Build scorecards, capture leads, and deliver reports from one clean workspace.</h1>
+          <p className="muted">
+            Designed for publishing conversion-focused assessments with structured analytics, result pages, and PDF delivery.
+          </p>
+          <div className="login-feature-list">
+            <div>
+              <strong>Landing Pages</strong>
+              <span>Publish polished entry pages without leaving the studio.</span>
+            </div>
+            <div>
+              <strong>Questions + Scoring</strong>
+              <span>Configure weighted questions, answer logic, and results.</span>
+            </div>
+            <div>
+              <strong>Reports + Integrations</strong>
+              <span>Queue PDFs, export leads, and trigger webhook events.</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="card login-card">
+          <div className="login-card-head">
+            <h2>Sign in to QAssess</h2>
+            <p className="muted">Use your tenant credentials to open the Studio.</p>
+          </div>
+          <form onSubmit={submit} className="form-grid">
+            <label>
+              API Base URL
+              <input
+                value={apiBaseUrl}
+                onChange={(event) => setApiBaseUrl(event.target.value)}
+                placeholder="Leave blank to use same-origin"
+                type="url"
+                autoComplete="url"
+              />
+            </label>
+            <label>
+              Email
+              <input value={email} onChange={(event) => setEmail(event.target.value)} required type="email" autoComplete="email" />
+            </label>
+            <label>
+              Password
+              <input
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                type="password"
+                autoComplete="current-password"
+              />
+            </label>
+            <label>
+              Tenant Slug
+              <input value={tenantSlug} onChange={(event) => setTenantSlug(event.target.value)} placeholder="acme" autoComplete="organization" />
+            </label>
+            <button disabled={loading} type="submit" className="btn btn-primary">
+              {loading ? 'Signing In...' : 'Sign In'}
+            </button>
+          </form>
+          {notice ? <p className={`notice ${notice.type}`}>{notice.message}</p> : null}
+        </section>
+      </div>
     </div>
   );
 }

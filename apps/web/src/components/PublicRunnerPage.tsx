@@ -229,11 +229,11 @@ export function PublicRunnerPage(props: PublicRunnerPageProps) {
 
   return (
     <div className="page runner-page">
-      <div className="aurora" />
       <header className="runner-header">
         <div>
-          <h1>Assessment</h1>
-          <p className="muted">Simple, guided flow for your clients.</p>
+          <span className="runner-eyebrow">Client Experience</span>
+          <h1>{bootstrap?.landing.seoTitle ?? 'Assessment'}</h1>
+          <p className="muted">{bootstrap?.landing.seoDescription ?? 'Simple, guided flow for your clients.'}</p>
         </div>
         <Link to="/" className="btn btn-secondary">
           Back to Studio
@@ -244,34 +244,48 @@ export function PublicRunnerPage(props: PublicRunnerPageProps) {
       {busy ? <p className="notice info">{busy}...</p> : null}
 
       {stage === 'setup' ? (
-        <section className="card runner-card">
-          <h2>Start</h2>
-          <p className="muted">Enter your assessment key (slug), then click start.</p>
-          <div className="inline-grid two">
-            <label>
-              Assessment key
-              <input value={slug} onChange={(event) => setSlug(event.target.value)} placeholder="smoke-mm488jnw" />
-            </label>
-            <label>
-              API URL (optional)
-              <input value={props.apiBaseUrl} readOnly />
-            </label>
-          </div>
-          <div className="button-row">
-            <button className="btn" type="button" onClick={() => void withTask('Loading assessment', loadAssessment)}>
-              Load
-            </button>
-            <button className="btn btn-primary" type="button" onClick={() => void withTask('Starting assessment', startAssessment)}>
-              Start Assessment
-            </button>
-          </div>
-          {bootstrap ? (
-            <div className="summary-box">
-              <h3>{bootstrap.landing.seoTitle ?? 'Assessment'}</h3>
-              <p>{bootstrap.landing.seoDescription ?? 'Answer a few quick questions to get your score.'}</p>
-              <p className="muted">{bootstrap.questions.length} questions</p>
+        <section className="runner-stage runner-stage-setup">
+          <article className="card runner-card">
+            <h2>Load assessment</h2>
+            <p className="muted">Enter your assessment key, confirm the page copy, then launch the flow.</p>
+            <div className="inline-grid two">
+              <label>
+                Assessment key
+                <input value={slug} onChange={(event) => setSlug(event.target.value)} placeholder="smoke-mm488jnw" autoComplete="off" />
+              </label>
+              <label>
+                API URL
+                <input value={props.apiBaseUrl} readOnly type="url" />
+              </label>
             </div>
-          ) : null}
+            <div className="button-row">
+              <button className="btn" type="button" onClick={() => void withTask('Loading assessment', loadAssessment)}>
+                Load
+              </button>
+              <button className="btn btn-primary" type="button" onClick={() => void withTask('Starting assessment', startAssessment)}>
+                Start Assessment
+              </button>
+            </div>
+          </article>
+
+          <article className="card runner-card runner-preview-card">
+            <div className="runner-preview-top">
+              <span className="status-pill live">READY</span>
+              <span className="muted small">{bootstrap?.questions.length ?? 0} questions</span>
+            </div>
+            <h3>{bootstrap?.landing.seoTitle ?? 'Load an assessment to preview it'}</h3>
+            <p className="muted">{bootstrap?.landing.seoDescription ?? 'Answer a few quick questions to get your score.'}</p>
+            <div className="runner-preview-stats">
+              <div>
+                <span className="metric-label">Lead capture</span>
+                <strong>{bootstrap?.leadCaptureMode ?? 'before_results'}</strong>
+              </div>
+              <div>
+                <span className="metric-label">Result delivery</span>
+                <strong>Web + PDF</strong>
+              </div>
+            </div>
+          </article>
         </section>
       ) : null}
 
@@ -282,19 +296,25 @@ export function PublicRunnerPage(props: PublicRunnerPageProps) {
           <div className="inline-grid two">
             <label>
               Email
-              <input type="email" value={leadEmail} onChange={(event) => setLeadEmail(event.target.value)} placeholder="you@example.com" />
+              <input
+                type="email"
+                value={leadEmail}
+                onChange={(event) => setLeadEmail(event.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+              />
             </label>
             <label>
               First name
-              <input value={leadFirstName} onChange={(event) => setLeadFirstName(event.target.value)} />
+              <input value={leadFirstName} onChange={(event) => setLeadFirstName(event.target.value)} autoComplete="given-name" />
             </label>
             <label>
               Last name
-              <input value={leadLastName} onChange={(event) => setLeadLastName(event.target.value)} />
+              <input value={leadLastName} onChange={(event) => setLeadLastName(event.target.value)} autoComplete="family-name" />
             </label>
             <label>
               Company
-              <input value={leadCompany} onChange={(event) => setLeadCompany(event.target.value)} />
+              <input value={leadCompany} onChange={(event) => setLeadCompany(event.target.value)} autoComplete="organization" />
             </label>
           </div>
           <label className="inline-label">
@@ -310,6 +330,10 @@ export function PublicRunnerPage(props: PublicRunnerPageProps) {
       {stage === 'questions' && currentQuestion ? (
         <section className="card runner-card">
           <div className="question-progress">
+            <div className="runner-progress-meta">
+              <span className="runner-eyebrow">Question {currentIndex + 1}</span>
+              <span className="muted small">{bootstrap?.questions.length} total</span>
+            </div>
             <div className="question-progress-track">
               <span style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }} />
             </div>
@@ -408,7 +432,7 @@ export function PublicRunnerPage(props: PublicRunnerPageProps) {
       {stage === 'result' && result ? (
         <section className="card runner-card">
           <h2>Your Results</h2>
-          <div className="metric-grid">
+          <div className="metric-grid runner-result-grid">
             <div>
               <span className="metric-label">Score</span>
               <strong>{result.normalizedScore}</strong>
@@ -424,7 +448,7 @@ export function PublicRunnerPage(props: PublicRunnerPageProps) {
           </div>
 
           <h3>Recommendations</h3>
-          <ul>
+          <ul className="runner-recommendations">
             {result.recommendations.length ? result.recommendations.map((item) => <li key={item}>{item}</li>) : <li>No recommendations available.</li>}
           </ul>
 
